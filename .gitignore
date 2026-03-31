@@ -1,0 +1,2 @@
+# Ignorar o ficheiro com as senhas reais do banco de dados
+includes/db.php
