@@ -1,0 +1,22 @@
+<link href="_style/default.css" rel="stylesheet" type="text/css"/>
+<link href="_style/jquery.click-calendario-1.0.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="_scripts/jquery.js"></script>
+<script type="text/javascript" src="_scripts/jquery.click-calendario-1.0-min.js"></script>		
+
+<input type="text" name="txtDataInicial" id="txtDataInicial" size="10" maxlength="10" />
+<input type="text" name="txtDataFinal" id="txtDataFinal" size="10" maxlength="10"/>
+
+<script>
+	jQuery.noConflict();
+	$('#txtDataInicial').focus(function(){
+		$(this).calendario({
+			target:'#txtDataInicial'
+		});
+	});
+	
+	$('#txtDataFinal').focus(function(){
+		$(this).calendario({
+			target:'#txtDataFinal'
+		});
+	});	
+</script>
