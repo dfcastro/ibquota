@@ -3,8 +3,7 @@
 /**
  * IBQUOTA 3
  * GG - Gerenciador Grafico do IBQUOTA
- * * Cabecalho das paginas. Com o menu.
- * Atualizado para Bootstrap 5 e otimizado via CDN.
+ * Cabecalho das paginas com Identidade IFNMG.
  */
 
 if (file_exists("css")) {
@@ -26,19 +25,19 @@ if (file_exists("css")) {
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
+  <link rel="stylesheet" href="<?php echo $path_raiz; ?>css/ifnmg.css">
 </head>
 
 <body>
 
   <script>
-    // Mantivemos o seu script original. Certifique-se de que o jQuery está a ser 
-    // carregado noutro ficheiro (como no footer) para isto funcionar corretamente.
+    // Se o calendário não abrir, teremos que trazer o jQuery do footer para cima desta linha.
     $(function() {
       $("#txtDataInicial").datepicker();
     });
   </script>
 
-  <nav class="navbar navbar-expand-lg navbar-dark bg-success shadow-sm mb-4">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
     <div class="container-fluid">
       <a class="navbar-brand fw-bold" href="#">IBQuota 3</a>
 
@@ -52,7 +51,7 @@ if (file_exists("css")) {
             <a class="nav-link active" aria-current="page" href="<?php echo $path_raiz; ?>index.php">Home</a>
           </li>
 
-          <?php if ($_SESSION['permissao'] > 0) { ?>
+          <?php if (isset($_SESSION['permissao']) && $_SESSION['permissao'] > 0) { ?>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle text-white" href="#" id="dropCadastros" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                 Cadastros
@@ -83,7 +82,7 @@ if (file_exists("css")) {
             </ul>
           </li>
 
-          <?php if ($_SESSION['permissao'] == 2) { ?>
+          <?php if (isset($_SESSION['permissao']) && $_SESSION['permissao'] == 2) { ?>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle text-white" href="#" id="dropAvancado" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                 Avançado
@@ -121,4 +120,4 @@ if (file_exists("css")) {
     </div>
   </nav>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <div class="content container">
