@@ -68,12 +68,8 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-bar-chart"></i> Relatórios</a>
               <ul class="dropdown-menu shadow-sm">
-                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/impressoes.php">Impressões</a></li>
-                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/impressoes_detalhadas.php">Impressões detalhadas</a></li>
-                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/auditoria_impressoes.php">Auditoria Impressões</a></li>
-                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/impressoes_com_erro.php">Impressões com erro</a></li>
-                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/usuarios.php">Pesquisar quota</a></li>
-                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/quota_por_usuario.php">Quota por usuário</a></li>
+                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/impressoes.php">Histórico Geral</a></li>
+                <li><a class="dropdown-item" href="<?php echo $path_raiz; ?>relatorios/impressoes_com_erro.php">Impressões com Erro</a></li>
                 <li>
                   <hr class="dropdown-divider">
                 </li>

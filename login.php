@@ -1,23 +1,81 @@
 <?php
 
 /**
- * IBQUOTA 3
- * GG - Gerenciador Grafico do IBQUOTA
- * Pagina de login Unificada (Bootstrap 5 + Identidade IFNMG)
+ * IBQUOTA 3 - LOGIN HÍBRIDO (CHAMANDO FUNÇÕES NATIVAS)
  */
 include_once 'includes/db.php';
 include_once 'includes/functions.php';
 
-if (primeiro_acesso($mysqli) == true) {
-  header("Location: primeiro_acesso.php");
-  exit();
-}
-
 sec_session_start();
 
-if (login_check($mysqli) == true) {
-  header("Location: includes/logout.php");
-  exit();
+$erro = "";
+
+if (isset($_POST['login'], $_POST['senha'])) {
+  $usuario = trim(strtolower($_POST['login']));
+  $senha = $_POST['senha'];
+
+  // --- TENTATIVA 1: LOGIN ADMIN (Usando a função nativa do sistema) ---
+  // A função login($usuario, $senha, $mysqli) já faz todo o SHA512 + Salt corretamente
+  if (login($usuario, $senha, $mysqli) == true) {
+    // Sucesso como Admin! A função login() já criou todas as $_SESSION corretamente.
+    header("Location: index.php");
+    exit();
+  }
+
+  // --- TENTATIVA 2: ACTIVE DIRECTORY (Se não for admin) ---
+  $stmt_ldap = $mysqli->prepare("SELECT LDAP_server, LDAP_port, LDAP_base, LDAP_user, LDAP_password FROM config_geral WHERE id = 1");
+  $stmt_ldap->execute();
+  $stmt_ldap->bind_result($ldap_server, $ldap_porta, $ldap_base, $ldap_usuario, $ldap_senha);
+  $stmt_ldap->fetch();
+  $stmt_ldap->close();
+
+  if (!empty($ldap_server)) {
+    $ldapconn = @ldap_connect($ldap_server, $ldap_porta);
+    if ($ldapconn) {
+      ldap_set_option($ldapconn, LDAP_OPT_PROTOCOL_VERSION, 3);
+      ldap_set_option($ldapconn, LDAP_OPT_REFERRALS, 0);
+
+      if (@ldap_bind($ldapconn, $ldap_usuario, $ldap_senha)) {
+        $filtro = "(&(objectCategory=person)(objectClass=user)(sAMAccountName={$usuario}))";
+        $search = @ldap_search($ldapconn, $ldap_base, $filtro);
+        $info = @ldap_get_entries($ldapconn, $search);
+
+        if ($info["count"] > 0) {
+          $dn_usuario = $info[0]["dn"];
+          if (@ldap_bind($ldapconn, $dn_usuario, $senha)) {
+
+            // Senha do AD OK! Verifica se está sincronizado
+            $stmt_chk = $mysqli->prepare("SELECT usuario FROM usuarios WHERE usuario = ?");
+            $stmt_chk->bind_param('s', $usuario);
+            $stmt_chk->execute();
+            $stmt_chk->store_result();
+
+            if ($stmt_chk->num_rows > 0) {
+              // Criamos a sessão MANUAL para o usuário comum (Portal do Servidor)
+              // Importante: Usamos as mesmas variáveis que o login_check() espera
+              $_SESSION['usuario'] = $usuario;
+              $_SESSION['permissao'] = 1;
+
+              // Esta linha é vital para o functions.php aceitar o login:
+              $_SESSION['login_string'] = hash('sha512', $senha . $_SERVER['HTTP_USER_AGENT']);
+
+              header("Location: meu_painel.php");
+              exit();
+            } else {
+              $erro = "Usuário autenticado no AD, mas não encontrado no IBQuota. Sincronize no painel Admin.";
+            }
+          } else {
+            $erro = "Senha de rede incorreta.";
+          }
+        } else {
+          $erro = "Usuário ou senha incorretos.";
+        }
+      }
+      ldap_close($ldapconn);
+    }
+  } else {
+    $erro = "Usuário ou senha incorretos.";
+  }
 }
 ?>
 <!DOCTYPE html>
@@ -30,7 +88,6 @@ if (login_check($mysqli) == true) {
   <title>Portal de Impressão - IFNMG</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
   <link href="css/ifnmg.css" rel="stylesheet">
 
   <style>
@@ -45,7 +102,6 @@ if (login_check($mysqli) == true) {
     .form-signin {
       width: 100%;
       max-width: 420px;
-      /* Levemente mais largo para acomodar o texto explicativo */
       padding: 15px;
       margin: auto;
     }
@@ -60,14 +116,11 @@ if (login_check($mysqli) == true) {
 <body class="login-page text-center">
 
   <main class="form-signin">
-
-
-
     <div class="card shadow-sm border-0 border-top border-success border-4 rounded-3">
 
       <div class="card-body p-4">
         <img class="logo-campus img-fluid mb-3" src="png/logo_almenara.jpg" alt="Logo IFNMG Campus Almenara" onerror="this.style.display='none'">
-        
+
         <h4 class="mb-1 fw-bold text-dark">Portal de Impressão</h4>
         <p class="text-muted small mb-3">Acesso para Servidores e Equipe NTI</p>
 
@@ -75,13 +128,13 @@ if (login_check($mysqli) == true) {
           💡 <b>Atenção:</b> Utilize o seu usuário no formato <b>nome.sobrenome</b> e a mesma senha usada para acessar os computadores do campus.
         </div>
 
-        <?php if (isset($_GET['error'])) { ?>
+        <?php if (!empty($erro)) { ?>
           <div class="alert alert-danger py-2 small fw-bold shadow-sm" role="alert">
-            ⚠️ Credenciais incorretas. Tente novamente!
+            ⚠️ <?php echo $erro; ?>
           </div>
         <?php } ?>
 
-        <form action="includes/process_login.php" method="post" name="login_form">
+        <form action="login.php" method="post" name="login_form">
 
           <div class="input-group mb-3 shadow-sm rounded">
             <span class="input-group-text bg-light border-end-0">

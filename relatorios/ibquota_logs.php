@@ -1,101 +1,96 @@
-<?php 
+<?php
+
 /**
  * IBQUOTA 3
- * GG - Gerenciador Grafico do IBQUOTA
- * 
- * 13/11/2018 - Valcir C.
- *
- * Lista Logs do DAEMON
- */ 
+ * Relatório de Logs do Sistema (CUPS/Backend) - Refatorado
+ */
 include_once '../includes/db.php';
 include_once '../includes/functions.php';
- 
 sec_session_start();
 
-
 if (login_check($mysqli) == false) {
-  header("Location: ../login.php");
-  exit();
+   header("Location: ../login.php");
+   exit();
 }
 
 include '../includes/header.php';
 
-//PAGINACAO
-$p = (isset($_GET['p'])) ? (int)$_GET['p'] : 1;
-$p = ($p < 1) ? 1 : $p;
-$p_inicio = (QTDE_POR_PAGINA * $p) - QTDE_POR_PAGINA;
-$p_qtde_por_pagina = (int)QTDE_POR_PAGINA; 
-$p_num_registros=0;
-if ($num_stmt = $mysqli->prepare("SELECT count(*) 
-        FROM log_ibquota")) {
-    $num_stmt->execute();
-    $num_stmt->bind_result($p_num_registros);
-    $num_stmt->fetch();
-    $num_stmt->close();
-}
 
-
- 
-// Busca log no banco de dados 
-if ($stmt = $mysqli->prepare("SELECT id,mensagem, DATE_FORMAT(datahora, '%d/%m/%Y %Hh%i') as datahora
-      FROM log_ibquota
-      Order by id DESC LIMIT ?, ?")) {
-    $stmt->bind_param('ii', $p_inicio,$p_qtde_por_pagina);
-    $stmt->execute(); 
-    $stmt->store_result();
-    $stmt->bind_result($id,$mensagem,$datahora);
-}
-
-
+// Busca os últimos 500 logs RELEVANTES (esconde o spam de "started")
+$query = "SELECT id, mensagem, DATE_FORMAT(datahora, '%d/%m/%Y %H:%i') as datahora 
+          FROM log_ibquota 
+          WHERE TRIM(mensagem) != 'IBQUOTA started.' 
+          ORDER BY id DESC LIMIT 500";
+$resultado = $mysqli->query($query);
 ?>
 
-<center><h2><font color=#428bca>Log do Backend CUPS</font></h2><br>
-   <table border="0" width="800" align="center">
-    <tr><td>
-    <div class="panel panel-default">
-      <div class="container-fluid">
-       
-        <table class="table table-hover table-sm">
-          <thead>
-            <tr>
-              <th scope="col">Data</th>
-              <th scope="col">Mensagem</th>
-            </tr>
-          </thead>
-          <tbody>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
 
+<div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
+   <div>
+      <h3 class="fw-bold text-dark mb-0"><i class="bi bi-terminal text-dark me-2"></i> Logs do Backend (CUPS)</h3>
+      <p class="text-muted mb-0 small">Registo de eventos do sistema e erros de comunicação com o daemon.</p>
+   </div>
+</div>
 
+<div class="card shadow-sm border-0 border-top border-dark border-4 mb-4">
+   <div class="card-body p-4">
+      <div class="table-responsive">
+         <table id="tabelaLogs" class="table table-hover table-striped align-middle mb-0 w-100 font-monospace small">
+            <thead class="table-dark">
+               <tr>
+                  <th style="width: 200px;">Data e Hora</th>
+                  <th>Mensagem do Sistema</th>
+               </tr>
+            </thead>
+            <tbody>
+               <?php
+               // Removido o IF e o Colspan. O DataTables vai gerir o estado "vazio" automaticamente!
+               while ($log = $resultado->fetch_assoc()) {
+                  // Destaca palavras críticas como "Erro", "Fail", "Denied"
+                  $mensagem = htmlspecialchars(utf8_decode($log['mensagem']));
+                  if (stripos($mensagem, 'erro') !== false || stripos($mensagem, 'fail') !== false) {
+                     $mensagem = "<span class='text-danger fw-bold'><i class='bi bi-x-circle me-1'></i>{$mensagem}</span>";
+                  }
 
-<?php
-   $sem_log = 1;
-
-   // Lista log deste usuario
-   while ($stmt->fetch()) {
-      echo "<tr>";
-      echo "<td><b>". $datahora ."</b></td>";
-      echo "<td>$mensagem</td>\n";
-      $sem_log = 0;
-   } 
-   if ($sem_log == 1) {
-      echo "<tr><td colspan=\"2\"><i>Sem registro de Log. Se houve erro de acesso ao Banco de Dados entao o BACKEND/CUPS gravou log em <code> /tmp/ibquota3.log</code>.</i></td></tr>";
-   } else {
-      echo "<tr><td colspan=\"2\">";
-      barra_de_paginas($p,$p_num_registros);
-      echo "</td></tr>";
-   }
-
-
-?>
+                  echo "<tr>";
+                  echo "<td><i class='bi bi-clock me-1 text-muted'></i> {$log['datahora']}</td>";
+                  echo "<td>{$mensagem}</td>";
+                  echo "</tr>\n";
+               }
+               ?>
             </tbody>
-        </table>
-
+         </table>
       </div>
-     </div>
+   </div>
+</div>
 
-    </td></tr>
-   </table>
-   </center>
+<?php include '../includes/footer.php'; ?>
 
-<?php
-   include '../includes/footer.php';
-?>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+
+<script>
+   $(document).ready(function() {
+      $('#tabelaLogs').DataTable({
+         language: {
+            url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/pt-BR.json'
+         },
+         pageLength: 25,
+         dom: '<"row mb-3"<"col-md-6"B><"col-md-6 text-end"f>>rt<"row mt-3"<"col-md-6"i><"col-md-6"p>>',
+         buttons: [{
+            extend: 'excelHtml5',
+            className: 'btn btn-sm btn-success shadow-sm',
+            text: '<i class="bi bi-file-earmark-excel"></i> Exportar Logs'
+         }],
+         order: [
+            [0, 'desc']
+         ] // Ordena pela data mais recente
+      });
+   });
+</script>

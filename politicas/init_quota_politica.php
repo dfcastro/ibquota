@@ -1,164 +1,105 @@
 <?php
+
 /**
  * IBQUOTA 3
- * GG - Gerenciador Grafico do IBQUOTA
- * 
- * 02/12/2018 - Valcir C.
- *
- * Inicialização Manual de Quota de usuarios
- */  
+ * Inicialização Manual de Quota de Usuários (Renovação de Saldo)
+ */
 include_once '../includes/db.php';
 include_once '../includes/functions.php';
- 
 sec_session_start();
 
-if (login_check($mysqli) == false) {
+if (login_check($mysqli) == false || $_SESSION['permissao'] != 2) {
   header("Location: ../login.php");
   exit();
 }
 
-if ($_SESSION['permissao'] != 2){
-  header("Location: ../login.php");
-  exit();
+$msg = "";
+$tipo_msg = "";
+
+// ==========================================
+// AÇÃO: RESETAR QUOTAS
+// ==========================================
+if (isset($_POST['acao']) && $_POST['acao'] == 'resetar_quota') {
+  $cod_politica = (int)$_POST['cod_politica'];
+
+  if ($cod_politica > 0) {
+    // Busca o nome para a mensagem de sucesso
+    $stmt_pol = $mysqli->prepare("SELECT nome, quota_padrao FROM politicas WHERE cod_politica = ?");
+    $stmt_pol->bind_param('i', $cod_politica);
+    $stmt_pol->execute();
+    $stmt_pol->bind_result($nome, $quota_padrao);
+    $stmt_pol->fetch();
+    $stmt_pol->close();
+
+    // MÁGICA DE RESET: Apaga os registros antigos. O IBQuota recriará com o valor padrão na próxima impressão.
+    $deleta_stmt = $mysqli->prepare("DELETE FROM quota_usuario WHERE cod_politica = ?");
+    $deleta_stmt->bind_param('i', $cod_politica);
+    $deleta_stmt->execute();
+    $deleta_stmt->close();
+
+    $msg = "Sucesso! O saldo de todos os usuários da política <b>{$nome}</b> foi reiniciado para <b>{$quota_padrao} páginas</b>.";
+    $tipo_msg = "success";
+  }
 }
 
 include '../includes/header.php';
-
-
-// Não teve variavel enviada pelo Formulario
-if (isset($_POST['cod_politica']) == false ) {
-  
 ?>
 
-
-  <center>
-    <h2><font color=#428bca>Inicializa&ccedil;&atilde;o manual de quota de usu&aacute;rios</font></h2>
-  <br>
-  <table border="0" width="800" align="center">
-  <tr><td>
-  <div class="panel panel-default">
-      <div class="container-fluid">
-          <form action="<?php echo esc_url($_SERVER['PHP_SELF']); ?>" method="post">          
-
-       
-              <div class="card mb-4 shadow-sm" >
-    <div class="card-header bg-success">
-      <h4 class="my-0 font-weight-normal">Selecione a Pol&iacute;tica de Impress&atilde;o</h4>
-    </div>
-    <div class="card-body">
-            <fieldset class="form-group">
-              <div class="row">
-                <div class="col-sm-10">
-
-<?php
-
-$stmt = $mysqli->prepare("SELECT cod_politica,nome, quota_padrao, quota_infinita 
-        FROM politicas
-        ORDER BY nome");
-// $stmt->bind_param('ii', $p_inicio,$p_qtde_por_pagina);
-$stmt->execute(); 
-$stmt->store_result();
-$stmt->bind_result($cod_politica,$nome, $quota_padrao, $quota_infinita);
-while ($stmt->fetch()) {
-
-    echo "<div class=\"form-check";
-    if ($quota_infinita == 1) {
-      echo " disabled\">\n";
-    } else {
-      echo "\">\n";
-    }
-    echo "<input class=\"form-check-input\" type=\"radio\" name=\"cod_politica\" value=\"";
-    echo $cod_politica . "\"";
-    if ($quota_infinita == 1) {
-      echo " disabled>\n";
-    } else {
-      echo ">\n";
-    }
-    echo "<label class=\"form-check-label\">";
-    echo "<h4>Pol&iacute;tica: <b>". $nome . "</b></h4>";
-    if ($quota_infinita == 1) {
-      echo "<b>Quota Infinita</b><br>";
-    } else {
-      echo "Quota padr&atilde;o: <b>". $quota_padrao ."</b><br>";
-    }
-    echo "\n</label>";
-    echo "</div>\n";
-}
-echo "</div>";
-echo "</div>";
-echo "</fieldset>";
-
-?>
-
-<div class="alert alert-success" role="alert">
-  <h4 class="alert-heading">Aten&ccedil;&atilde;o!</h4>
-  <p>Este procedimento ir&aacute; iniciar a quota de todos os usu&aacute;rios da pol&iacute;tica de impress&atilde;o selecionada com o valor <b>Quota Padr&atilde;o</b>. Ap&oacute;s executado n&atilde;o ser&aacute; poss&iacute;vel reverter.</p>
+<div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
+  <div>
+    <h3 class="fw-bold text-dark mb-0"><i class="bi bi-arrow-clockwise text-primary me-2"></i> Reiniciar Quotas (Virada de Mês)</h3>
+    <p class="text-muted mb-0 small">Restaure o saldo de impressão dos grupos para o valor padrão da política.</p>
+  </div>
 </div>
 
-    </div>
-    </div>
+<?php if ($msg != "") { ?>
+  <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible fade show shadow-sm"><i class="bi bi-check-circle-fill me-2"></i> <?php echo $msg; ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+<?php } ?>
 
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card shadow-sm border-0 border-top border-primary border-4">
+      <div class="card-body p-4">
 
-            <center>
+        <div class="alert alert-warning text-dark shadow-sm border-0 mb-4">
+          <h5 class="fw-bold mb-2"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i> Atenção, Administrador!</h5>
+          <p class="mb-0 small">Este procedimento irá apagar o saldo restante/acumulado de todos os usuários vinculados à política selecionada. Eles voltarão a ter exatamente a "Cota Padrão" definida. <b>Esta ação não pode ser desfeita.</b></p>
+        </div>
 
-            
-             <button type="submit" class="btn btn-primary">Iniciar quota dos usu&aacute;rios</button>
-            </center>
-            <br><br>
-          </form>
+        <form action="" method="post">
+          <input type="hidden" name="acao" value="resetar_quota">
+
+          <h5 class="fw-bold mb-3">Selecione a Política Alvo</h5>
+          <div class="row row-cols-1 g-3 mb-4">
+            <?php
+            $res_pol = $mysqli->query("SELECT cod_politica, nome, quota_padrao, quota_infinita FROM politicas ORDER BY nome");
+
+            while ($pol = $res_pol->fetch_assoc()) {
+              $disabled = ($pol['quota_infinita'] == 1) ? "disabled" : "";
+              $bg_class = ($pol['quota_infinita'] == 1) ? "bg-light border-light opacity-50" : "bg-white border-primary border-start border-4 shadow-sm cursor-pointer";
+
+              echo "<div class='col'>";
+              echo "<label class='card card-body p-3 {$bg_class} flex-row align-items-center' style='cursor: pointer;'>";
+              echo "<input class='form-check-input mt-0 me-3' type='radio' name='cod_politica' value='{$pol['cod_politica']}' required {$disabled}>";
+              echo "<div>";
+              echo "<span class='d-block fw-bold'>{$pol['nome']}</span>";
+              if ($pol['quota_infinita'] == 1) {
+                echo "<span class='small text-muted'><i class='bi bi-infinity'></i> Não aplicável (Cota Ilimitada)</span>";
+              } else {
+                echo "<span class='small text-muted'>Os usuários voltarão a ter: <b class='text-primary'>{$pol['quota_padrao']} págs</b></span>";
+              }
+              echo "</div></label></div>";
+            }
+            ?>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary btn-lg fw-bold" onclick="return confirm('Tem certeza absoluta? O saldo acumulado dos usuários será perdido e a cota será reiniciada!');"><i class="bi bi-arrow-repeat me-1"></i> Reiniciar Saldo dos Usuários</button>
+          </div>
+        </form>
       </div>
-   </div>
-   </td></tr>
-   </table>
-   </center>
+    </div>
+  </div>
+</div>
 
-   <?php 
-   include '../includes/footer.php';
-   exit(); 
-}
-
-$cod_politica = trim($_POST['cod_politica']);
-
-if (strlen($cod_politica)<1) {
-   echo "<div class=\"alert alert-danger\" role=\"alert\">Pol&iacute;tica n&atilde;o selecionada.</div><br><br><center>";
-   echo "<a class=\"btn btn-primary\" href=\"init_quota_politica.php\" role=\"button\" aria-expanded=\"false\">Voltar</a></center>";
-   include '../includes/footer.php';
-   exit(); 
-}
-
-
-// Deleta Quota de Usuario
-$deleta_stmt = $mysqli->prepare("DELETE FROM quota_usuario
-  WHERE cod_politica = ?");
-$deleta_stmt->bind_param('i', $cod_politica);
-$deleta_stmt->execute();
-$deleta_stmt->close();
-
-$stmt = $mysqli->prepare("SELECT nome, quota_padrao 
-        FROM politicas
-        WHERE cod_politica = ?");
-$stmt->bind_param('i', $cod_politica);
-$stmt->execute(); 
-$stmt->store_result();
-$stmt->bind_result($nome, $quota_padrao);
-$stmt->fetch();
-
-
-
-
-echo "<center><div class=\"card mb-4 shadow-sm\" style=\"width: 30rem;\">";
-echo " <div class=\"card-header bg-success\">";
-echo " <h4 class=\"my-0 font-weight-normal\">Quota iniciada com Sucesso</h4>
-</div>";
-echo "<div class=\"card-body\">\n";
-echo " <ul class=\"list-group list-group-flush\">";
-echo "  <li class=\"list-group-item\"><h4>Pol&iacute;tica: <b>". $nome . "</b></h4></li>\n";
-echo "  <li class=\"list-group-item\"><b>Quota Padr&atilde;o: $quota_padrao </b></li>\n";
-echo " </ul>\n";
-echo "</div></div>";
-
-
-echo "<a class=\"btn btn-primary\" href=\"init_quota_politica.php\" role=\"button\" aria-expanded=\"false\">Inicializar quota de outra pol&iacute;tica</a>";
-echo "</center><br>";
-include '../includes/footer.php';
- ?>
+<?php include '../includes/footer.php'; ?>
