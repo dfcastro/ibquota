@@ -1,9 +1,10 @@
 <?php
+
 /**
  * IBQUOTA 3
  * GG - Gerenciador Grafico do IBQUOTA
  * Adiciona Novo Usuario Administrativo (Refatorado Bootstrap 5)
- */  
+ */
 include_once '../../core/db.php';
 include_once '../../core/functions.php';
 
@@ -11,7 +12,7 @@ sec_session_start();
 
 // 1. Proteção de página: Apenas Admins (Nível 2)
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
-    header("Location: ../../public/login.php"); 
+    header("Location: ../../public/login.php");
     exit();
 }
 
@@ -21,7 +22,9 @@ $msg_erro = "";
 // PROCESSAMENTO DO FORMULÁRIO (POST)
 // ==========================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
-    
+    $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+    validar_csrf_token($token_recebido);
+
     $login = trim($_POST['login']);
     $senha_texto = trim($_POST['senha']);
     $nome = trim($_POST['nome']);
@@ -36,19 +39,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
         $select_stmt->bind_param('s', $login);
         $select_stmt->execute();
         $select_stmt->store_result();
-        
+
         if ($select_stmt->num_rows > 0) {
             $msg_erro = "O login '{$login}' já está cadastrado no sistema.";
         } else {
             // Criptografia atualizada para SHA-512 (Casando com o login.php)
             $senha_hash = hash('sha512', $senha_texto);
-            
+
             // Grava o novo usuário
             if ($insert_stmt = $mysqli->prepare("INSERT INTO adm_users (login, nome, email, senha, permissao) VALUES (?, ?, ?, ?, ?)")) {
                 $insert_stmt->bind_param('ssssi', $login, $nome, $email, $senha_hash, $permissao);
                 $insert_stmt->execute();
                 $insert_stmt->close();
-                
+
                 // Redireciona para o painel principal com aviso de sucesso
                 header("Location: index.php?msg=add");
                 exit();
@@ -83,7 +86,8 @@ include '../../core/layout/header.php';
         <div class="card shadow-sm border-0 border-top border-success border-4">
             <div class="card-body p-4">
                 <form action="adm_users_add.php" method="post">
-                    
+                    <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
+
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted">Login do Sistema <span class="text-danger">*</span></label>
@@ -129,7 +133,7 @@ include '../../core/layout/header.php';
     </div>
 </div>
 
-<?php 
+<?php
 // 3. Caminho do Footer corrigido
-include '../../core/layout/footer.php'; 
+include '../../core/layout/footer.php';
 ?>

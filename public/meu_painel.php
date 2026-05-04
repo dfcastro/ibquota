@@ -1,14 +1,13 @@
 <?php
-
 /**
- * IBQUOTA 3 - PORTAL DO SERVIDOR (VERSÃO FINAL INTEGRADA)
+ * IBQUOTA 3 - PORTAL DO SERVIDOR (Tempo Real)
+ * Com layout responsivo em Cards para as impressões
  */
 include_once '../core/db.php';
 include_once '../core/functions.php';
 
 sec_session_start();
 
-// 1. Validação de Sessão
 if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
@@ -16,8 +15,7 @@ if (!isset($_SESSION['usuario'])) {
 
 $usuario_logado = $_SESSION['usuario'];
 
-
-// 2. BUSCA DE DADOS DO USUÁRIO, POLÍTICA E SALDO (CORRIGIDO PARA LER COTAS EXTRAS)
+// BUSCA DE DADOS DO USUÁRIO, POLÍTICA E SALDO
 $query = "
     SELECT 
         u.cod_usuario,
@@ -42,7 +40,6 @@ $stmt->bind_result($cod_usuario, $nome_politica, $limite_padrao, $quota_infinita
 $stmt->fetch();
 $stmt->close();
 
-// Fallback caso o usuário não tenha política definida ainda (ex: acabou de ser sincronizado)
 if (empty($nome_politica)) {
     $nome_politica = "Padrão (Pendente)";
     $limite_padrao = 50;
@@ -50,7 +47,6 @@ if (empty($nome_politica)) {
     $quota_infinita = 0;
 }
 
-// 3. Cálculo do Percentual e Cor da Barra
 $percentual = 0;
 $cor_barra = "bg-success";
 
@@ -61,7 +57,6 @@ if ($quota_infinita == 1) {
     if ($percentual < 0) $percentual = 0;
     if ($percentual > 100) $percentual = 100;
 
-    // Mudar cor se a cota estiver acabando
     if ($percentual < 20) $cor_barra = "bg-danger";
     elseif ($percentual < 50) $cor_barra = "bg-warning";
 }
@@ -80,25 +75,37 @@ if ($quota_infinita == 1) {
         body {
             background-color: #f4f6f9;
         }
-
         .bg-ifnmg {
             background-color: #32a041;
             color: white;
         }
-
         .progress {
             background-color: #e9ecef;
             border-radius: 50px;
             overflow: hidden;
         }
-
         .card {
             border-radius: 12px;
         }
-
-        /* Efeito de transição suave nas impressões */
-        #lista-impressoes-realtime tr {
-            transition: background-color 0.5s ease;
+        
+        /* Efeito hover nos nossos novos cartões de impressão */
+        .impressao-card {
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        .impressao-card:hover {
+            background-color: #f8f9fa;
+            border-left-color: #32a041;
+        }
+        
+        /* O texto ajusta-se melhor agora que não está esmagado numa tabela */
+        .doc-nome-responsivo {
+            max-width: 250px; 
+        }
+        @media (min-width: 768px) {
+            .doc-nome-responsivo {
+                max-width: 380px; 
+            }
         }
     </style>
 </head>
@@ -125,7 +132,7 @@ if ($quota_infinita == 1) {
                         <?php if ($nome_politica == "Sem Política Atribuída") { ?>
                             <div class="display-3 text-danger mb-2"><i class="bi bi-exclamation-triangle"></i></div>
                             <h4 class="fw-bold text-dark">Usuário Bloqueado</h4>
-                            <p class="text-muted small">Você não possui cota de impressão. Procure o NTI.</p>
+                            <p class="text-muted small">Você não possui cota de impressão.</p>
                         <?php } elseif ($quota_infinita == 1) { ?>
                             <div class="display-3 text-primary mb-2"><i class="bi bi-infinity"></i></div>
                             <h4 class="fw-bold text-dark">Impressão Ilimitada</h4>
@@ -135,17 +142,15 @@ if ($quota_infinita == 1) {
                             <p class="text-muted mb-3">páginas restantes de <?php echo $limite_padrao; ?></p>
 
                             <div class="progress mb-3" style="height: 25px;">
-                                <div class="progress-bar progress-bar-striped progress-bar-animated <?php echo $cor_barra; ?>" role="progressbar" style="width: <?php echo $percentual; ?>%;" aria-valuenow="<?php echo $saldo_atual; ?>" aria-valuemin="0" aria-valuemax="<?php echo $limite_padrao; ?>">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated <?php echo $cor_barra; ?>" role="progressbar" style="width: <?php echo $percentual; ?>%;">
                                     <span class="fw-bold fs-6"><?php echo round($percentual); ?>%</span>
                                 </div>
                             </div>
 
                             <p class="small text-muted mb-4">Regra aplicada: <b><?php echo $nome_politica; ?></b></p>
-
                             <a href="solicitar_cota.php" class="btn btn-outline-success w-100 fw-bold shadow-sm" style="border-width: 2px;">
                                 <i class="bi bi-plus-circle me-2"></i>Solicitar Páginas Extras
                             </a>
-
                         <?php } ?>
                     </div>
                 </div>
@@ -158,7 +163,7 @@ if ($quota_infinita == 1) {
                             <i class="bi bi-cloud-arrow-up text-primary" style="font-size: 3rem;"></i>
                         </div>
                         <h4 class="fw-bold text-dark">Impressão Sem Fios (Web Print)</h4>
-                        <p class="text-muted">Envie arquivos PDF diretamente do seu celular ou notebook pessoal para as impressoras do campus sem precisar de cabos.</p>
+                        <p class="text-muted">Envie arquivos PDF diretamente para as impressoras do campus sem cabos.</p>
                         <a href="web_print.php" class="btn btn-primary shadow-sm fw-bold"><i class="bi bi-upload me-2"></i> Enviar Documento</a>
                     </div>
                 </div>
@@ -167,29 +172,21 @@ if ($quota_infinita == 1) {
 
         <div class="card shadow-sm border-0 mb-5">
             <div class="card-header bg-white fw-bold p-3 border-bottom d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-activity text-primary me-2"></i> Atividade em Tempo Real</span>
-                <span class="badge bg-light text-secondary border" id="status-conexao"><i class="bi bi-broadcast"></i> Conectando...</span>
+                <span><i class="bi bi-activity text-primary me-2"></i> Últimas 10 Impressões</span>
+                <div>
+                    <span class="badge bg-light text-secondary border me-2" id="status-conexao"><i class="bi bi-broadcast"></i> Conectando...</span>
+                    <a href="meu_historico.php" class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i> Histórico Completo</a>
+                </div>
             </div>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th class="ps-4">Data/Hora</th>
-                            <th>Documento</th>
-                            <th class="text-center">Páginas</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="lista-impressoes-realtime">
-                        <tr>
-                            <td colspan="4" class="text-center text-muted py-5">
-                                <div class="spinner-border text-primary mb-2" role="status"></div><br>
-                                Sincronizando com as impressoras...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+            
+            <!-- AQUI ESTÁ A MÁGICA: Substituímos a Table por uma List-Group -->
+            <div class="list-group list-group-flush" id="lista-impressoes-realtime">
+                <div class="list-group-item text-center text-muted py-5 border-0">
+                    <div class="spinner-border text-primary mb-2" role="status"></div><br>
+                    Sincronizando com as impressoras...
+                </div>
             </div>
+
         </div>
     </div>
 
@@ -198,51 +195,57 @@ if ($quota_infinita == 1) {
     <script>
         function buscarStatusTempoReal() {
             fetch('ajax_status.php')
-                .then(response => {
-                    if (!response.ok) throw new Error('Erro na rede');
-                    return response.json();
-                })
+                .then(response => response.json())
                 .then(data => {
                     const lista = document.getElementById('lista-impressoes-realtime');
                     const conexao = document.getElementById('status-conexao');
 
-                    // Pisca a bolinha de conexão (feedback)
-                    conexao.className = "badge bg-success bg-opacity-10 text-success border border-success-subtle";
+                    conexao.className = "badge bg-success bg-opacity-10 text-success border border-success-subtle me-2";
                     conexao.innerHTML = '<i class="bi bi-broadcast"></i> Ao vivo';
 
                     if (data.erro) {
-                        lista.innerHTML = `<tr><td colspan="4" class="text-danger text-center py-4"><i class="bi bi-x-circle me-1"></i> ${data.erro}</td></tr>`;
+                        lista.innerHTML = `<div class="list-group-item text-danger text-center py-4 border-0"><i class="bi bi-x-circle me-1"></i> ${data.erro}</div>`;
                         return;
                     }
 
                     if (data.length === 0) {
-                        lista.innerHTML = `<tr><td colspan="4" class="text-muted text-center py-5"><i class="bi bi-inbox display-6 d-block mb-2"></i>Nenhuma impressão recente encontrada.</td></tr>`;
+                        lista.innerHTML = `<div class="list-group-item text-muted text-center py-5 border-0"><i class="bi bi-inbox display-6 d-block mb-2"></i>Nenhuma impressão recente encontrada.</div>`;
                         return;
                     }
 
-                    // Constrói a tabela HTML com os dados novos
                     let html = '';
                     data.forEach(item => {
+                        // Construímos um Card Responsivo com Flexbox (d-flex)
                         html += `
-                    <tr>
-                        <td class='ps-4 text-muted small'>${item.data_imp} às ${item.hora_impressao}</td>
-                        <td>
-                            <span class='d-inline-block text-truncate' style='max-width: 350px;' title='${item.nome_documento}'>
-                                <i class='bi bi-file-earmark-pdf me-2 text-danger'></i>${item.nome_documento}
-                            </span>
-                            <br><small class="text-muted"><i class="bi bi-printer me-1"></i>${item.impressora}</small>
-                        </td>
-                        <td class='text-center fw-bold'>${item.paginas}</td>
-                        <td><span class='badge ${item.cor} shadow-sm px-3 py-2'><i class="bi ${item.icone} me-1"></i>${item.status_texto}</span></td>
-                    </tr>`;
+                        <div class="list-group-item impressao-card py-3">
+                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
+                                
+                                <div class="mb-3 mb-md-0 w-100">
+                                    <div class="text-muted small mb-1"><i class="bi bi-calendar-event me-1"></i>${item.data_imp} às ${item.hora_impressao}</div>
+                                    <div class="fw-bold text-dark text-truncate doc-nome-responsivo" title="${item.nome_documento}">
+                                        <i class="bi bi-file-earmark-pdf text-danger me-1"></i>${item.nome_documento}
+                                    </div>
+                                    <small class="text-muted"><i class="bi bi-printer me-1"></i>${item.impressora}</small>
+                                </div>
+                                
+                                <div class="d-flex align-items-center justify-content-between w-100 w-md-auto mt-1 mt-md-0">
+                                    <div class="me-4 text-center">
+                                        <span class="d-block text-muted small" style="line-height: 1;">Páginas</span>
+                                        <b class="fs-5">${item.paginas}</b>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="badge ${item.cor} shadow-sm px-3 py-2 fs-6"><i class="bi ${item.icone} me-1"></i>${item.status_texto}</span>
+                                    </div>
+                                </div>
+                                
+                            </div>
+                        </div>`;
                     });
 
-                    // Injeta o HTML novo na tela
                     lista.innerHTML = html;
 
-                    // Volta o badge de conexão para cinza rapidinho para criar o "pulso"
                     setTimeout(() => {
-                        conexao.className = "badge bg-light text-secondary border";
+                        conexao.className = "badge bg-light text-secondary border me-2";
                         conexao.innerHTML = '<i class="bi bi-broadcast"></i> Aguardando...';
                     }, 2000);
 
@@ -250,18 +253,13 @@ if ($quota_infinita == 1) {
                 .catch(error => {
                     console.error('Erro na sincronização:', error);
                     const conexao = document.getElementById('status-conexao');
-                    conexao.className = "badge bg-danger bg-opacity-10 text-danger border border-danger-subtle";
+                    conexao.className = "badge bg-danger bg-opacity-10 text-danger border border-danger-subtle me-2";
                     conexao.innerHTML = '<i class="bi bi-wifi-off"></i> Sem Conexão';
                 });
         }
 
-        // Executa na hora que a tela abre
         buscarStatusTempoReal();
-
-        // Repete a cada 3 segundos!
         setInterval(buscarStatusTempoReal, 3000);
     </script>
-
 </body>
-
 </html>

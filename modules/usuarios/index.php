@@ -211,6 +211,7 @@ if (isset($_GET['msg'])) {
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <form action="usuario_add.php" method="post">
+        <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
         <div class="modal-body p-4">
           <div class="alert alert-info small shadow-sm border-0 mb-4">
             <i class="bi bi-info-circle-fill me-1"></i> Digite exatamente o login de rede (ex: <b>nome.sobrenome</b>).

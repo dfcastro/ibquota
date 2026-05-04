@@ -132,6 +132,7 @@ if (isset($_GET['msg'])) {
       <div class="card-header bg-white fw-bold py-3"><i class="bi bi-person-plus-fill text-success me-2"></i>Novo Acesso</div>
       <div class="card-body bg-light">
         <form action="adm_users_add.php" method="post">
+          <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
           <div class="mb-3">
             <label class="form-label fw-bold small text-muted">Login de Acesso</label>
             <input type="text" class="form-control" name="login" placeholder="Ex: diretor.geral" required>

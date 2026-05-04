@@ -1,4 +1,5 @@
 <?php
+
 /**
  * IBQUOTA 3 - Solicitação de Cota Extra (Usuário)
  */
@@ -12,10 +13,13 @@ if (!isset($_SESSION['usuario'])) {
 }
 
 $usuario_logado = $_SESSION['usuario'];
-$msg = ""; $tipo_msg = "";
+$msg = "";
+$tipo_msg = "";
 
 // Processa o Envio do Pedido
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
+    $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+    validar_csrf_token($token_recebido);
     $paginas = (int)$_POST['paginas'];
     $motivo = trim($_POST['motivo']);
 
@@ -47,14 +51,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solicitar Cota Extra - IFNMG</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <style>body { background-color: #f4f6f9; } .bg-ifnmg { background-color: #32a041; color: white; }</style>
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+
+        .bg-ifnmg {
+            background-color: #32a041;
+            color: white;
+        }
+    </style>
 </head>
+
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
         <div class="container">
@@ -79,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
         <div class="card shadow-sm border-0 border-top border-success border-4 mb-4">
             <div class="card-body p-4">
                 <form action="solicitar_cota.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label fw-bold text-muted small">Quantidade Necessária</label>
@@ -117,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
                                 $badge = ($h['status'] == 'Aprovado') ? 'success' : (($h['status'] == 'Negado') ? 'danger' : 'warning text-dark');
                                 echo "<tr>";
                                 echo "<td class='ps-4 text-muted small'>{$h['data_br']}</td>";
-                                echo "<td><span class='d-inline-block text-truncate' style='max-width: 250px;' title='".htmlspecialchars($h['motivo'])."'>".htmlspecialchars($h['motivo'])."</span></td>";
+                                echo "<td><span class='d-inline-block text-truncate' style='max-width: 250px;' title='" . htmlspecialchars($h['motivo']) . "'>" . htmlspecialchars($h['motivo']) . "</span></td>";
                                 echo "<td class='text-center fw-bold'>{$h['paginas']}</td>";
                                 echo "<td><span class='badge bg-{$badge}'>{$h['status']}</span></td>";
                                 echo "</tr>";
@@ -132,4 +148,5 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
         </div>
     </div>
 </body>
+
 </html>

@@ -152,6 +152,7 @@ include '../../core/layout/header.php';
             <div class="card-header bg-white fw-bold py-3"><i class="bi bi-sliders me-2 text-primary"></i>Regras Básicas</div>
             <div class="card-body bg-light">
                 <form action="politica_gerenciar.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                     <input type="hidden" name="cod_politica" value="<?php echo $cod_politica; ?>">
                     <input type="hidden" name="acao" value="editar_politica">
 
@@ -181,6 +182,7 @@ include '../../core/layout/header.php';
                 <p class="text-muted small mb-3">Marque os grupos do campus que devem receber automaticamente as configurações desta política de impressão.</p>
 
                 <form action="politica_gerenciar.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                     <input type="hidden" name="cod_politica" value="<?php echo $cod_politica; ?>">
                     <input type="hidden" name="acao" value="salvar_grupos">
 
@@ -245,6 +247,7 @@ include '../../core/layout/header.php';
 
                     <li class="list-group-item py-3">
                         <form action="politica_gerenciar.php" method="post">
+                            <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                             <input type="hidden" name="cod_politica" value="<?php echo $cod_politica; ?>">
                             <input type="hidden" name="acao" value="add_impressora">
                             <div class="input-group">

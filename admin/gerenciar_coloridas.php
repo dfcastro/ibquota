@@ -58,6 +58,9 @@ if (isset($_GET['view'])) {
 // 2. PROCESSAMENTO DE APROVAÇÃO / REJEIÇÃO (Disparado via POST)
 // ========================================================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'], $_POST['id_pedido'])) {
+    $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+    validar_csrf_token($token_recebido);
+    
     $id_pedido = (int)$_POST['id_pedido'];
     $acao = $_POST['acao'];
 

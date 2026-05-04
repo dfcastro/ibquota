@@ -226,6 +226,7 @@ include '../../core/layout/header.php';
                     <div class="col-md-6 ps-md-4">
                         <h5 class="fw-bold mb-3">Adicionar ao Grupo</h5>
                         <form action="usuario_gerenciar.php" method="post" class="card card-body border-0 shadow-sm">
+                            <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                             <input type="hidden" name="cod_usuario" value="<?php echo $cod_usuario; ?>">
                             <input type="hidden" name="acao" value="add_grupo">
                             <div class="mb-3">
@@ -261,6 +262,7 @@ include '../../core/layout/header.php';
                 } else {
                 ?>
                     <form action="usuario_gerenciar.php" method="post" class="row">
+                        <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                         <input type="hidden" name="cod_usuario" value="<?php echo $cod_usuario; ?>">
                         <input type="hidden" name="usuario_nome" value="<?php echo htmlspecialchars($usuario); ?>">
                         <input type="hidden" name="acao" value="add_quota">
@@ -324,6 +326,7 @@ include '../../core/layout/header.php';
                                 <p class="text-muted small">Cuidado: Alterar o login pode dessincronizar o usuário com o Active Directory/LDAP se ele não tiver sido alterado no servidor principal primeiro.</p>
                             </div>
                             <form action="usuario_gerenciar.php" method="post">
+                                <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                                 <input type="hidden" name="cod_usuario" value="<?php echo $cod_usuario; ?>">
                                 <input type="hidden" name="usuario_antigo" value="<?php echo htmlspecialchars($usuario); ?>">
                                 <input type="hidden" name="acao" value="editar_nome">

@@ -22,6 +22,8 @@ $msg_erro = "";
 // PROCESSAMENTO DO FORMULÁRIO (POST)
 // ==========================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cod_adm_users'], $_POST['login'])) {
+    $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+    validar_csrf_token($token_recebido);
 
     $cod_adm_users = (int)$_POST['cod_adm_users'];
     $login = trim($_POST['login']);
@@ -108,6 +110,7 @@ include '../../core/layout/header.php';
             <div class="card-body p-4">
                 <!-- Correção: O action agora tem o nome de arquivo correto -->
                 <form action="adm_users_editar.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                     <input type="hidden" name="cod_adm_users" value="<?php echo $cod_adm_users; ?>">
 
                     <div class="row mb-3">

@@ -190,6 +190,7 @@ if (isset($_GET['msg'])) {
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <form action="grupo_add.php" method="post">
+        <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
         <div class="modal-body p-4">
           <div class="mb-3">
             <label class="form-label fw-bold">Nome do Grupo</label>
@@ -213,6 +214,7 @@ if (isset($_GET['msg'])) {
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <form action="grupo_editar.php" method="post">
+        <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
         <div class="modal-body p-4">
           <input type="hidden" name="cod_grupo" id="edit_cod_grupo">
           <input type="hidden" name="grupo_antigo" id="edit_grupo_antigo">

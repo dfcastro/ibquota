@@ -9,7 +9,7 @@ include_once '../../core/functions.php';
 sec_session_start();
 
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] !== 2) {
-  header("Location: ../../public/login.php"); 
+  header("Location: ../../public/login.php");
   exit();
 }
 
@@ -67,6 +67,7 @@ include '../../core/layout/header.php';
         </div>
 
         <form action="" method="post">
+          <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
           <input type="hidden" name="acao" value="resetar_quota">
 
           <h5 class="fw-bold mb-3">Selecione a Política Alvo</h5>

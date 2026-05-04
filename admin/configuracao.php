@@ -213,6 +213,7 @@ include '../core/layout/header.php';
 
                                 <form action="configuracao.php" method="post" class="bg-light p-3 border rounded">
                                     <input type="hidden" name="acao" value="limpar_logs">
+                                    <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                                     <div class="row align-items-center justify-content-center">
                                         <div class="col-auto">
                                             <label class="fw-bold">Apagar registros mais antigos que:</label>
