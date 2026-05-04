@@ -1,0 +1,4 @@
+# Ignorar o ficheiro com as senhas reais do banco de dados
+core/db.php
+auth/config.inc
+.env
