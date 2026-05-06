@@ -1,22 +1,36 @@
 <?php
 
 /**
- * IBQUOTA 3 - Central de Gerenciamento do Usuário (All-in-One)
+ * IFQUOTA - Central de Gerenciamento do Usuário (All-in-One)
  * Combina: Edição, Grupos e Quotas Extras Inteligentes.
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
-sec_session_start();
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-    header("Location: ../../public/login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
+}
+
+// PROTEÇÃO GLOBAL CSRF (Aplica a todas as ações POST)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validar_csrf_token($_POST['csrf_token'] ?? '');
 }
 
 $cod_usuario = isset($_GET['cod_usuario']) ? (int)$_GET['cod_usuario'] : (isset($_POST['cod_usuario']) ? (int)$_POST['cod_usuario'] : 0);
 
 if ($cod_usuario === 0) {
-    header("Location: index.php");
+    header("Location: " . $BASE_URL . "/admin/contas");
     exit();
 }
 
@@ -73,11 +87,10 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'add_grupo') {
     $chk->close();
 }
 
-// 3. AÇÃO: REMOVER GRUPO E LIMPAR COTA FANTASMA (CASCATA)
+// 3. AÇÃO: REMOVER GRUPO E LIMPAR COTA FANTASMA
 if (isset($_GET['remove_grupo'])) {
     $rm_grupo = (int)$_GET['remove_grupo'];
 
-    // A. Descobre o NOME do grupo (A tabela de cotas usa o nome em texto)
     $stmt_g = $mysqli->prepare("SELECT grupo FROM grupos WHERE cod_grupo = ?");
     $stmt_g->bind_param('i', $rm_grupo);
     $stmt_g->execute();
@@ -85,7 +98,6 @@ if (isset($_GET['remove_grupo'])) {
     $stmt_g->fetch();
     $stmt_g->close();
 
-    // B. Descobre o LOGIN do usuário
     $stmt_u = $mysqli->prepare("SELECT usuario FROM usuarios WHERE cod_usuario = ?");
     $stmt_u->bind_param('i', $cod_usuario);
     $stmt_u->execute();
@@ -93,13 +105,11 @@ if (isset($_GET['remove_grupo'])) {
     $stmt_u->fetch();
     $stmt_u->close();
 
-    // C. Remove o vínculo oficial da tabela grupo_usuario
     $del_grp = $mysqli->prepare("DELETE FROM grupo_usuario WHERE cod_usuario = ? AND cod_grupo = ?");
     $del_grp->bind_param('ii', $cod_usuario, $rm_grupo);
     $del_grp->execute();
     $del_grp->close();
 
-    // D. A MÁGICA DA LIMPEZA: Remove o saldo de cota ativa (quota_usuario) amarrado a esse grupo!
     if (!empty($nome_grupo_rm) && !empty($nome_usuario_rm)) {
         $del_q = $mysqli->prepare("DELETE FROM quota_usuario WHERE usuario = ? AND grupo = ?");
         $del_q->bind_param('ss', $nome_usuario_rm, $nome_grupo_rm);
@@ -107,11 +117,11 @@ if (isset($_GET['remove_grupo'])) {
         $del_q->close();
     }
 
-    $msg = "Grupo removido e saldo de cota desvinculado com sucesso!";
+    $msg = "Grupo removido e saldo desvinculado com sucesso!";
     $tipo_msg = "success";
 }
 
-// 4. AÇÃO: QUOTA ADICIONAL INTELIGENTE
+// 4. AÇÃO: QUOTA ADICIONAL
 if (isset($_POST['acao']) && $_POST['acao'] == 'add_quota') {
     $usuario = trim($_POST['usuario_nome']);
     $cod_politica = (int)$_POST['cod_politica'];
@@ -160,14 +170,14 @@ $stmt->bind_param('i', $cod_usuario);
 $stmt->execute();
 $stmt->store_result();
 if ($stmt->num_rows < 1) {
-    header("Location: index.php");
+    header("Location: " . $BASE_URL . "/admin/contas");
     exit();
 }
 $stmt->bind_result($usuario);
 $stmt->fetch();
 $stmt->close();
 
-include '../../core/layout/header.php';
+include __DIR__ . '/../../core/layout/header.php';
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
@@ -176,57 +186,61 @@ include '../../core/layout/header.php';
         <p class="text-muted mb-0 small">Painel de controle unificado para <b><?php echo htmlspecialchars($usuario); ?></b></p>
     </div>
     <div>
-        <a href="index.php" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar à Lista</a>
+        <!-- Rota de retorno -->
+        <a href="<?php echo $BASE_URL; ?>/admin/contas" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar à Lista</a>
     </div>
 </div>
 
 <?php if ($msg != "") { ?>
-    <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible fade show shadow-sm" role="alert">
+    <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible fade show shadow-sm border-0" role="alert">
         <i class="bi bi-info-circle-fill me-2"></i> <?php echo $msg; ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php } ?>
 
-<div class="card shadow-sm border-0">
+<div class="card shadow-sm border-0 border-top border-primary border-4">
     <div class="card-header bg-white pt-3 pb-0 border-bottom-0">
         <ul class="nav nav-tabs" id="userTabs" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#grupos" type="button"><i class="bi bi-diagram-3 me-1"></i> Grupos</button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#quotas" type="button"><i class="bi bi-plus-circle me-1"></i> Quota Adicional</button>
+                <button class="nav-link fw-bold text-success" data-bs-toggle="tab" data-bs-target="#quotas" type="button"><i class="bi bi-plus-circle me-1"></i> Quota Adicional</button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#editar" type="button"><i class="bi bi-pencil me-1"></i> Editar Nome</button>
+                <button class="nav-link fw-bold text-warning" data-bs-toggle="tab" data-bs-target="#editar" type="button"><i class="bi bi-pencil me-1"></i> Editar Nome</button>
             </li>
         </ul>
     </div>
     <div class="card-body p-4 bg-light rounded-bottom">
         <div class="tab-content" id="userTabsContent">
 
+            <!-- ABA GRUPOS -->
             <div class="tab-pane fade show active" id="grupos" role="tabpanel">
                 <div class="row">
                     <div class="col-md-6 border-end">
                         <h5 class="fw-bold mb-3">Grupos Atuais</h5>
-                        <ul class="list-group shadow-sm mb-4">
+                        <ul class="list-group shadow-sm mb-4 border-0">
                             <?php
                             $sem_grupo = true;
                             $res = $mysqli->query("SELECT g.cod_grupo, g.grupo FROM grupo_usuario gu JOIN grupos g ON g.cod_grupo = gu.cod_grupo WHERE gu.cod_usuario = $cod_usuario");
                             while ($row = $res->fetch_assoc()) {
                                 $sem_grupo = false;
-                                echo "<li class='list-group-item d-flex justify-content-between align-items-center py-2'>";
+                                echo "<li class='list-group-item border-0 d-flex justify-content-between align-items-center py-2 mb-1'>";
                                 echo "<span class='fw-semibold text-dark'><i class='bi bi-folder2 text-primary me-2'></i>{$row['grupo']}</span>";
-                                echo "<a href='usuario_gerenciar.php?cod_usuario=$cod_usuario&remove_grupo={$row['cod_grupo']}' class='btn btn-sm btn-outline-danger' title='Remover do grupo'><i class='bi bi-x-lg'></i></a>";
+                                // Link limpo para remoção
+                                echo "<a href='{$BASE_URL}/admin/contas/gerenciar?cod_usuario=$cod_usuario&remove_grupo={$row['cod_grupo']}' class='btn btn-sm btn-outline-danger shadow-sm' title='Remover do grupo'><i class='bi bi-x-lg'></i></a>";
                                 echo "</li>";
                             }
-                            if ($sem_grupo) echo "<li class='list-group-item text-muted fst-italic py-3 text-center'>Usuário não pertence a nenhum grupo.</li>";
+                            if ($sem_grupo) echo "<li class='list-group-item text-muted fst-italic py-3 text-center border-0'>Usuário não pertence a nenhum grupo.</li>";
                             ?>
                         </ul>
                     </div>
                     <div class="col-md-6 ps-md-4">
                         <h5 class="fw-bold mb-3">Adicionar ao Grupo</h5>
-                        <form action="usuario_gerenciar.php" method="post" class="card card-body border-0 shadow-sm">
-                            <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
+                        <!-- Rota no action -->
+                        <form action="<?php echo $BASE_URL; ?>/admin/contas/gerenciar" method="post" class="card card-body border-0 shadow-sm">
+                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token'] ?? ''; ?>">
                             <input type="hidden" name="cod_usuario" value="<?php echo $cod_usuario; ?>">
                             <input type="hidden" name="acao" value="add_grupo">
                             <div class="mb-3">
@@ -241,12 +255,13 @@ include '../../core/layout/header.php';
                                     ?>
                                 </select>
                             </div>
-                            <button type="submit" class="btn btn-ifnmg w-100 fw-bold"><i class="bi bi-link-45deg me-1"></i> Vincular Grupo</button>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold shadow-sm"><i class="bi bi-link-45deg me-1"></i> Vincular Grupo</button>
                         </form>
                     </div>
                 </div>
             </div>
 
+            <!-- ABA QUOTAS -->
             <div class="tab-pane fade" id="quotas" role="tabpanel">
                 <?php
                 $query_pols = "SELECT p.cod_politica, p.nome, p.quota_infinita, p.quota_padrao, g.grupo 
@@ -261,8 +276,8 @@ include '../../core/layout/header.php';
                     echo "<div class='alert alert-warning shadow-sm border-0'><i class='bi bi-exclamation-triangle-fill me-2'></i><b>Atenção:</b> Este usuário não pertence a nenhum grupo com política de impressão definida. Por favor, adicione-o a um grupo na aba <b>'Grupos'</b> primeiro.</div>";
                 } else {
                 ?>
-                    <form action="usuario_gerenciar.php" method="post" class="row">
-                        <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
+                    <form action="<?php echo $BASE_URL; ?>/admin/contas/gerenciar" method="post" class="row">
+                        <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token'] ?? ''; ?>">
                         <input type="hidden" name="cod_usuario" value="<?php echo $cod_usuario; ?>">
                         <input type="hidden" name="usuario_nome" value="<?php echo htmlspecialchars($usuario); ?>">
                         <input type="hidden" name="acao" value="add_quota">
@@ -281,7 +296,7 @@ include '../../core/layout/header.php';
                                     <label class="form-label text-muted small">Motivo da Adição</label>
                                     <input type="text" class="form-control" name="motivo" placeholder="Ex: Impressão de Provas P1" required>
                                 </div>
-                                <button type="submit" class="btn btn-ifnmg fw-bold py-2 mt-auto"><i class="bi bi-save me-1"></i> Registrar Quota Extra</button>
+                                <button type="submit" class="btn btn-success fw-bold py-2 mt-auto shadow-sm"><i class="bi bi-save me-1"></i> Registrar Quota Extra</button>
                             </div>
                         </div>
 
@@ -295,7 +310,7 @@ include '../../core/layout/header.php';
                                     $bg_class = ($pol['quota_infinita'] == 1) ? 'bg-secondary bg-opacity-10 text-muted border-0' : 'bg-white shadow-sm border-success border-start border-4';
 
                                     echo "<div class='col'>";
-                                    echo "<label class='card card-body p-3 cursor-pointer {$bg_class} flex-row align-items-center'>";
+                                    echo "<label class='card card-body p-3 cursor-pointer {$bg_class} flex-row align-items-center border-0'>";
                                     echo "<input class='form-check-input mt-0 me-3' type='radio' name='cod_politica' value='{$pol['cod_politica']}' required {$disabled} {$checked}>";
                                     echo "<div>";
                                     echo "<span class='d-block fw-bold mb-1'>{$pol['nome']} <span class='badge bg-light text-dark border ms-2'><i class='bi bi-diagram-3'></i> Grupo Associado: {$pol['grupo']}</span></span>";
@@ -316,6 +331,7 @@ include '../../core/layout/header.php';
                 <?php } ?>
             </div>
 
+            <!-- ABA EDITAR NOME -->
             <div class="tab-pane fade" id="editar" role="tabpanel">
                 <div class="row justify-content-center">
                     <div class="col-md-8">
@@ -323,18 +339,18 @@ include '../../core/layout/header.php';
                             <div class="mb-4">
                                 <i class="bi bi-person-exclamation fs-1 text-warning"></i>
                                 <h4 class="fw-bold mt-2">Alterar Login na Rede</h4>
-                                <p class="text-muted small">Cuidado: Alterar o login pode dessincronizar o usuário com o Active Directory/LDAP se ele não tiver sido alterado no servidor principal primeiro.</p>
+                                <p class="text-muted small">Cuidado: Alterar o login pode dessincronizar o utilizador com o Active Directory se a alteração não for feita em ambos os lados simultaneamente.</p>
                             </div>
-                            <form action="usuario_gerenciar.php" method="post">
-                                <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
+                            <form action="<?php echo $BASE_URL; ?>/admin/contas/gerenciar" method="post">
+                                <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token'] ?? ''; ?>">
                                 <input type="hidden" name="cod_usuario" value="<?php echo $cod_usuario; ?>">
                                 <input type="hidden" name="usuario_antigo" value="<?php echo htmlspecialchars($usuario); ?>">
                                 <input type="hidden" name="acao" value="editar_nome">
 
-                                <div class="input-group input-group-lg mb-4">
-                                    <span class="input-group-text bg-light"><i class="bi bi-person"></i></span>
-                                    <input type="text" class="form-control" name="usuario_nome" value="<?php echo htmlspecialchars($usuario); ?>" required>
-                                    <button type="submit" class="btn btn-warning fw-bold px-4">Salvar Alteração</button>
+                                <div class="input-group input-group-lg mb-4 shadow-sm">
+                                    <span class="input-group-text bg-light border-0"><i class="bi bi-person"></i></span>
+                                    <input type="text" class="form-control border-0 bg-light" name="usuario_nome" value="<?php echo htmlspecialchars($usuario); ?>" required>
+                                    <button type="submit" class="btn btn-warning fw-bold px-4 border-0">Salvar Alteração</button>
                                 </div>
                             </form>
                         </div>
@@ -346,4 +362,4 @@ include '../../core/layout/header.php';
     </div>
 </div>
 
-<?php include '../../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../../core/layout/footer.php'; ?>

@@ -3,9 +3,11 @@
 /**
  * IBQUOTA 3 - Solicitação de Cota Extra (Usuário)
  */
-include_once '../core/db.php';
-include_once '../core/functions.php';
-sec_session_start();
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
 
 if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");

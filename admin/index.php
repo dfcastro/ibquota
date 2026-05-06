@@ -1,22 +1,34 @@
 <?php
 
 /**
- * IBQUOTA 3 - DASHBOARD ADMINISTRATIVO MODERNO
+ * IFQUOTA - DASHBOARD ADMINISTRATIVO MODERNO
  * Resumo estatístico e alertas em tempo real.
  */
 
-include_once '../core/db.php';
-include_once '../core/functions.php';
+// ==========================================
+// INCLUDES BLINDADOS COM __DIR__
+// ==========================================
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
 
-sec_session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
 
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
+
+// Validação de Sessão e Rotas Limpas
 if (!isset($_SESSION['usuario'])) {
-    header("Location: ../public/login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
 if (!isset($_SESSION['permissao']) || $_SESSION['permissao'] < 2) {
-    header("Location: ../public/meu_painel.php");
+    header("Location: " . $BASE_URL . "/meu-painel");
     exit();
 }
 
@@ -44,16 +56,38 @@ $pedidos_cota = $res_cota->fetch_assoc()['total'];
 $res_erro = $mysqli->query("SELECT COUNT(*) as total FROM impressoes WHERE DATE(data_impressao) = CURDATE() AND cod_status_impressao != 1");
 $erros_hoje = $res_erro->fetch_assoc()['total'];
 
-include '../core/layout/header.php';
+// 6. Status das Impressoras (Lido diretamente do CUPS)
+$total_impressoras = 0;
+$impressoras_online = 0;
+$impressoras_offline = 0;
+
+$cups_status = shell_exec('lpstat -p 2>/dev/null');
+
+if ($cups_status) {
+    $linhas = explode("\n", trim($cups_status));
+    foreach ($linhas as $linha) {
+        if (preg_match('/^printer\s+([^\s]+)/', $linha)) {
+            $total_impressoras++;
+            if (stripos($linha, 'disabled') !== false || stripos($linha, 'not ready') !== false) {
+                $impressoras_offline++;
+            } else {
+                $impressoras_online++;
+            }
+        }
+    }
+}
+
+include __DIR__ . '/../core/layout/header.php';
 ?>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 mt-2 border-bottom border-light pb-3">
     <div>
         <h3 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i> Painel de Controle</h3>
-        <p class="text-muted mb-md-0 small">Visão geral do consumo e alertas do servidor de impressão.</p>
+        <p class="text-muted mb-md-0 small">Visão geral do consumo e alertas do servidor de impressão IFQUOTA.</p>
     </div>
     <div>
-        <a href="../modules/relatorios/impressoes.php" class="btn btn-outline-primary shadow-sm fw-bold">
+        <!-- Rota atualizada para o relatório -->
+        <a href="<?php echo $BASE_URL; ?>/admin/relatorios/impressoes" class="btn btn-outline-primary shadow-sm fw-bold">
             <i class="bi bi-bar-chart-fill me-1"></i> Relatório Geral
         </a>
     </div>
@@ -61,7 +95,8 @@ include '../core/layout/header.php';
 
 <div class="row g-3 mb-4">
 
-    <div class="col-md-6 col-lg-3">
+    <!-- CARTÃO 1: Impresso Hoje -->
+    <div class="col-md-6 col-lg">
         <div class="card shadow-sm border-0 h-100 border-start border-success border-4">
             <div class="card-body">
                 <div class="d-flex align-items-center justify-content-between mb-2">
@@ -73,7 +108,8 @@ include '../core/layout/header.php';
         </div>
     </div>
 
-    <div class="col-md-6 col-lg-3">
+    <!-- CARTÃO 2: Volume do Mês -->
+    <div class="col-md-6 col-lg">
         <div class="card shadow-sm border-0 h-100 border-start border-primary border-4">
             <div class="card-body">
                 <div class="d-flex align-items-center justify-content-between mb-2">
@@ -85,8 +121,9 @@ include '../core/layout/header.php';
         </div>
     </div>
 
-    <div class="col-md-6 col-lg-3">
-        <a href="gerenciar_coloridas.php" class="text-decoration-none">
+    <!-- CARTÃO 3: Fila Colorida -->
+    <div class="col-md-6 col-lg">
+        <a href="<?php echo $BASE_URL; ?>/admin/coloridas" class="text-decoration-none">
             <div class="card shadow-sm border-0 h-100 border-start border-warning border-4 hover-card">
                 <div class="card-body">
                     <div class="d-flex align-items-center justify-content-between mb-2">
@@ -104,8 +141,9 @@ include '../core/layout/header.php';
         </a>
     </div>
 
-    <div class="col-md-6 col-lg-3">
-        <a href="solicitacoes.php" class="text-decoration-none">
+    <!-- CARTÃO 4: Pedidos de Cota -->
+    <div class="col-md-6 col-lg">
+        <a href="<?php echo $BASE_URL; ?>/admin/solicitacoes" class="text-decoration-none">
             <div class="card shadow-sm border-0 h-100 border-start border-info border-4 hover-card">
                 <div class="card-body">
                     <div class="d-flex align-items-center justify-content-between mb-2">
@@ -118,6 +156,33 @@ include '../core/layout/header.php';
                             echo "<span class='badge bg-info text-dark ms-2 fs-6'>Aguardando</span>";
                         } ?>
                     </h3>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- CARTÃO 5: Status da Rede -->
+    <div class="col-md-6 col-lg">
+        <a href="<?php echo $BASE_URL; ?>/admin/status-impressoras" class="text-decoration-none">
+            <div class="card shadow-sm border-0 h-100 border-start border-secondary border-4 hover-card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <h6 class="text-muted fw-bold mb-0" style="font-size: 0.9rem;">Status da Rede</h6>
+                        <div class="p-2 bg-secondary bg-opacity-10 text-secondary rounded"><i class="bi bi-router fs-5"></i></div>
+                    </div>
+                    <h3 class="fw-bold text-dark mb-0">
+                        <?php echo $impressoras_online; ?> <span class="fs-6 text-muted fw-normal">/ <?php echo $total_impressoras; ?> ON</span>
+                    </h3>
+
+                    <?php if ($impressoras_offline > 0): ?>
+                        <p class="text-danger small mt-2 mb-0 fw-bold blink">
+                            <i class="bi bi-exclamation-circle-fill"></i> <?php echo $impressoras_offline; ?> offline
+                        </p>
+                    <?php else: ?>
+                        <p class="text-success small mt-2 mb-0 fw-bold">
+                            <i class="bi bi-check-circle-fill"></i> Operacional
+                        </p>
+                    <?php endif; ?>
                 </div>
             </div>
         </a>
@@ -169,17 +234,35 @@ include '../core/layout/header.php';
             <div class="card-body p-0">
                 <ul class="list-group list-group-flush">
                     <?php
-                    $erros = $mysqli->query("SELECT usuario, nome_documento, impressora, DATE_FORMAT(data_impressao, '%d/%m %H:%i') as data_br FROM impressoes WHERE cod_status_impressao != 1 ORDER BY data_impressao DESC LIMIT 8");
+                    $erros = $mysqli->query("SELECT usuario, nome_documento, impressora, cod_status_impressao, DATE_FORMAT(data_impressao, '%d/%m %H:%i') as data_br FROM impressoes WHERE cod_status_impressao != 1 ORDER BY data_impressao DESC, hora_impressao DESC LIMIT 8");
 
                     if ($erros->num_rows > 0) {
                         while ($erro = $erros->fetch_assoc()) {
+
+                            $status_nome = status_impressao($erro['cod_status_impressao']);
+                            $badge_erro = "<span class='badge bg-danger'>Erro Desconhecido</span>";
+
+                            if ($erro['cod_status_impressao'] == 10) {
+                                $badge_erro = "<span class='badge bg-dark'><i class='bi bi-printer-fill me-1'></i>Físico/Offline</span>";
+                            } elseif ($erro['cod_status_impressao'] == 3 || stripos($status_nome, 'cadastrado') !== false) {
+                                $badge_erro = "<span class='badge bg-warning text-dark'><i class='bi bi-exclamation-triangle-fill me-1'></i>Sem Cota/Grupo</span>";
+                            } elseif (stripos($status_nome, 'excedida') !== false) {
+                                $badge_erro = "<span class='badge bg-danger'><i class='bi bi-slash-circle me-1'></i>Cota Excedida</span>";
+                            }
+
                             echo "<li class='list-group-item py-3'>";
-                            echo "<div class='d-flex w-100 justify-content-between'>";
-                            echo "<h6 class='mb-1 fw-bold text-danger'><i class='bi bi-printer me-1'></i>{$erro['impressora']}</h6>";
+                            echo "<div class='d-flex w-100 justify-content-between align-items-center mb-1'>";
+                            echo "<h6 class='mb-0 fw-bold text-danger'><i class='bi bi-printer me-1'></i>{$erro['impressora']}</h6>";
+                            echo "{$badge_erro}";
+                            echo "</div>";
+
+                            echo "<p class='mb-1 small text-truncate' style='max-width: 400px;' title='" . htmlspecialchars($erro['nome_documento']) . "'><b>Arquivo:</b> " . htmlspecialchars($erro['nome_documento']) . "</p>";
+
+                            echo "<div class='d-flex w-100 justify-content-between align-items-center mt-1'>";
+                            echo "<small class='text-muted'><i class='bi bi-person me-1'></i>Usuário: {$erro['usuario']}</small>";
                             echo "<small class='text-muted'>{$erro['data_br']}</small>";
                             echo "</div>";
-                            echo "<p class='mb-1 small text-truncate' style='max-width: 400px;' title='{$erro['nome_documento']}'><b>Arquivo:</b> {$erro['nome_documento']}</p>";
-                            echo "<small class='text-muted'><i class='bi bi-person me-1'></i>Usuário: {$erro['usuario']}</small>";
+
                             echo "</li>";
                         }
                     } else {
@@ -189,7 +272,7 @@ include '../core/layout/header.php';
                 </ul>
             </div>
             <div class="card-footer bg-light text-center border-0">
-                <a href="../modules/relatorios/impressoes_com_erro.php" class="text-decoration-none small text-danger fw-bold">Ver todos os erros <i class="bi bi-arrow-right"></i></a>
+                <a href="<?php echo $BASE_URL; ?>/admin/relatorios/erros" class="text-decoration-none small text-danger fw-bold">Ver todos os erros <i class="bi bi-arrow-right"></i></a>
             </div>
         </div>
     </div>
@@ -218,4 +301,4 @@ include '../core/layout/header.php';
     }
 </style>
 
-<?php include '../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../core/layout/footer.php'; ?>

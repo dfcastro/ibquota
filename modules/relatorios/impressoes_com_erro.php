@@ -1,24 +1,28 @@
 <?php
 
 /**
- * IBQUOTA 3
- * Relatório de Impressões com Erro/Bloqueio - Refatorado (Bootstrap 5 + DataTables)
+ * IFQUOTA - Relatório de Impressões com Erro/Bloqueio
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
 
-sec_session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-   header("Location: ../../public/login.php");
+   header("Location: " . $BASE_URL . "/login");
    exit();
 }
-include '../../core/layout/header.php';
+include __DIR__ . '/../../core/layout/header.php';
 
 // PAGINACAO
 $p = (isset($_GET['p'])) ? (int)$_GET['p'] : 1;
 $p = ($p < 1) ? 1 : $p;
-$p_qtde_por_pagina = 100; // Aumentado para 100 para facilitar exportação
+$p_qtde_por_pagina = 100;
 $p_inicio = ($p_qtde_por_pagina * $p) - $p_qtde_por_pagina;
 $p_num_registros = 0;
 
@@ -29,7 +33,6 @@ if ($num_stmt = $mysqli->prepare("SELECT count(*) FROM impressoes WHERE cod_stat
    $num_stmt->close();
 }
 
-// Busca impressoes com erro no banco de dados (Status diferente de 1)
 if ($stmt = $mysqli->prepare("SELECT DATE_FORMAT(data_impressao, '%d/%m/%Y'), hora_impressao, job_id, impressora,
               usuario, estacao, nome_documento, paginas, cod_politica, cod_status_impressao
       FROM impressoes
@@ -47,8 +50,13 @@ if ($stmt = $mysqli->prepare("SELECT DATE_FORMAT(data_impressao, '%d/%m/%Y'), ho
 
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
    <div>
-      <h3 class="fw-bold text-danger mb-0"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i> Impressões com Erro ou Bloqueadas</h3>
-      <p class="text-muted mb-0 small">Registo de trabalhos rejeitados por falta de cota, falha no CUPS ou problemas de permissão.</p>
+      <h3 class="fw-bold text-danger mb-0"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i> Impressões Bloqueadas ou com Erro</h3>
+      <p class="text-muted mb-0 small">Registo de trabalhos rejeitados por falta de cota, falha no CUPS ou problemas físicos.</p>
+   </div>
+   <div>
+      <a href="<?php echo $BASE_URL; ?>/admin/dashboard" class="btn btn-outline-secondary shadow-sm fw-bold">
+          <i class="bi bi-arrow-left me-1"></i> Voltar
+      </a>
    </div>
 </div>
 
@@ -74,7 +82,6 @@ if ($stmt = $mysqli->prepare("SELECT DATE_FORMAT(data_impressao, '%d/%m/%Y'), ho
                while ($stmt->fetch()) {
                   $sem_grupo = 0;
 
-                  // O Nosso Tradutor Visual de Status
                   $status_nome = status_impressao($cod_status_impressao);
                   $badge_class = 'text-bg-danger';
                   $icone = 'bi-x-circle-fill';
@@ -87,16 +94,21 @@ if ($stmt = $mysqli->prepare("SELECT DATE_FORMAT(data_impressao, '%d/%m/%Y'), ho
                      $status_nome = "Bloqueado: Cota Excedida";
                      $badge_class = 'bg-danger text-white border border-danger';
                      $icone = 'bi-slash-circle';
+                  } elseif ($cod_status_impressao == 10) {
+                     $status_nome = "Erro Físico / Offline";
+                     $badge_class = 'text-bg-dark';
+                     $icone = 'bi-printer-fill';
                   }
+
+                  $doc_seguro = htmlspecialchars(mb_convert_encoding($nome_documento, 'UTF-8', 'auto'));
 
                   echo "<tr>";
                   echo "<td><span class='text-muted small'>#{$job_id}</span></td>";
-                  // Corrigido: Agora mostramos a Data e Hora que faltava no original!
                   echo "<td><i class='bi bi-calendar3 me-1 text-muted small'></i> <span class='d-none'>" . date('Ymd', strtotime(str_replace('/', '-', $data_impressao))) . "</span>{$data_impressao} <span class='text-muted small ms-1'>{$hora_impressao}</span></td>";
                   echo "<td class='fw-bold text-dark'>{$usuario}</td>";
                   echo "<td>{$impressora}</td>";
                   echo "<td><span class='badge bg-light text-secondary border font-monospace'>{$estacao}</span></td>";
-                  echo "<td><span class='small text-truncate d-inline-block' style='max-width: 200px;' title='" . htmlspecialchars(utf8_decode($nome_documento)) . "'>" . htmlspecialchars(utf8_decode($nome_documento)) . "</span></td>";
+                  echo "<td><span class='small text-truncate d-inline-block' style='max-width: 200px;' title='{$doc_seguro}'>{$doc_seguro}</span></td>";
                   echo "<td class='text-center fw-bold text-muted'>{$paginas}</td>";
                   echo "<td><span class='badge {$badge_class} shadow-sm px-2 py-1'><i class='bi {$icone} me-1'></i>{$status_nome}</span></td>";
                   echo "</tr>\n";
@@ -116,8 +128,9 @@ if ($stmt = $mysqli->prepare("SELECT DATE_FORMAT(data_impressao, '%d/%m/%Y'), ho
    <?php barra_de_paginas($p, $p_num_registros); ?>
 </div>
 
-<?php include '../../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../../core/layout/footer.php'; ?>
 
+<!-- Scripts do DataTables -->
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
@@ -156,7 +169,7 @@ if ($stmt = $mysqli->prepare("SELECT DATE_FORMAT(data_impressao, '%d/%m/%Y'), ho
          ],
          order: [
             [1, 'desc']
-         ], // Ordena pela Data/Hora
+         ],
          columnDefs: [{
             orderable: false,
             targets: 5

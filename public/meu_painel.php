@@ -1,28 +1,46 @@
 <?php
+
 /**
  * IBQUOTA 3 - PORTAL DO SERVIDOR (Tempo Real)
- * Com layout responsivo em Cards para as impressões
+ * Com layout responsivo em Cards e Cálculo de Saldo Corrigido
+ * ATUALIZADO: Rotas Limpas, Deteção de Ambiente e Caminhos Blindados
  */
-include_once '../core/db.php';
-include_once '../core/functions.php';
 
-sec_session_start();
+// 1. INCLUDES BLINDADOS (Ajustado para voltar apenas 1 nível: public -> core)
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
 
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'];
+if ($host_atual === 'localhost' || $host_atual === '127.0.0.1') {
+    $BASE_URL = '/gg'; // Ambiente Local
+} else {
+    $BASE_URL = ''; // Ambiente de Produção
+}
+
+// 2. SEGURANÇA E REDIRECIONAMENTO COM ROTA LIMPA
 if (!isset($_SESSION['usuario'])) {
-    header("Location: login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
 $usuario_logado = $_SESSION['usuario'];
 
 // BUSCA DE DADOS DO USUÁRIO, POLÍTICA E SALDO
+// Só subtrai as páginas se o status for 1 (Sucesso)
 $query = "
     SELECT 
         u.cod_usuario,
         p.nome AS nome_politica,
         IFNULL(qu.quota, p.quota_padrao) AS limite_real,
         p.quota_infinita,
-        (IFNULL(qu.quota, p.quota_padrao) - IFNULL((SELECT SUM(paginas) FROM impressoes WHERE usuario = u.usuario), 0)) AS saldo_atual
+        (IFNULL(qu.quota, p.quota_padrao) - IFNULL((SELECT SUM(paginas) FROM impressoes WHERE usuario = u.usuario AND cod_status_impressao = 1), 0)) AS saldo_atual
     FROM usuarios u
     LEFT JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario
     LEFT JOIN grupos g ON gu.cod_grupo = g.cod_grupo
@@ -75,36 +93,39 @@ if ($quota_infinita == 1) {
         body {
             background-color: #f4f6f9;
         }
+
         .bg-ifnmg {
             background-color: #32a041;
             color: white;
         }
+
         .progress {
             background-color: #e9ecef;
             border-radius: 50px;
             overflow: hidden;
         }
+
         .card {
             border-radius: 12px;
         }
-        
-        /* Efeito hover nos nossos novos cartões de impressão */
+
         .impressao-card {
             transition: all 0.3s ease;
             border-left: 4px solid transparent;
         }
+
         .impressao-card:hover {
             background-color: #f8f9fa;
             border-left-color: #32a041;
         }
-        
-        /* O texto ajusta-se melhor agora que não está esmagado numa tabela */
+
         .doc-nome-responsivo {
-            max-width: 250px; 
+            max-width: 250px;
         }
+
         @media (min-width: 768px) {
             .doc-nome-responsivo {
-                max-width: 380px; 
+                max-width: 380px;
             }
         }
     </style>
@@ -114,10 +135,10 @@ if ($quota_infinita == 1) {
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="meu_painel.php"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
+            <a class="navbar-brand fw-bold" href="<?php echo $BASE_URL; ?>/meu-painel"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
             <div class="d-flex text-white align-items-center">
                 <span class="me-3 d-none d-md-inline"><i class="bi bi-person-circle me-1"></i> Olá, <b><?php echo htmlspecialchars($usuario_logado); ?></b></span>
-                <a href="../core/auth/logout.php" class="btn btn-sm btn-outline-light px-3"><i class="bi bi-box-arrow-right me-1"></i> Sair</a>
+                <a href="<?php echo $BASE_URL; ?>/logout" class="btn btn-sm btn-outline-light px-3"><i class="bi bi-box-arrow-right me-1"></i> Sair</a>
             </div>
         </div>
     </nav>
@@ -148,7 +169,7 @@ if ($quota_infinita == 1) {
                             </div>
 
                             <p class="small text-muted mb-4">Regra aplicada: <b><?php echo $nome_politica; ?></b></p>
-                            <a href="solicitar_cota.php" class="btn btn-outline-success w-100 fw-bold shadow-sm" style="border-width: 2px;">
+                            <a href="<?php echo $BASE_URL; ?>/solicitar-cota" class="btn btn-outline-success w-100 fw-bold shadow-sm" style="border-width: 2px;">
                                 <i class="bi bi-plus-circle me-2"></i>Solicitar Páginas Extras
                             </a>
                         <?php } ?>
@@ -164,7 +185,7 @@ if ($quota_infinita == 1) {
                         </div>
                         <h4 class="fw-bold text-dark">Impressão Sem Fios (Web Print)</h4>
                         <p class="text-muted">Envie arquivos PDF diretamente para as impressoras do campus sem cabos.</p>
-                        <a href="web_print.php" class="btn btn-primary shadow-sm fw-bold"><i class="bi bi-upload me-2"></i> Enviar Documento</a>
+                        <a href="<?php echo $BASE_URL; ?>/web-print" class="btn btn-primary shadow-sm fw-bold"><i class="bi bi-upload me-2"></i> Enviar Documento</a>
                     </div>
                 </div>
             </div>
@@ -175,11 +196,11 @@ if ($quota_infinita == 1) {
                 <span><i class="bi bi-activity text-primary me-2"></i> Últimas 10 Impressões</span>
                 <div>
                     <span class="badge bg-light text-secondary border me-2" id="status-conexao"><i class="bi bi-broadcast"></i> Conectando...</span>
-                    <a href="meu_historico.php" class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i> Histórico Completo</a>
+                    <!-- Nota: Garante que a rota meu-historico está mapeada no index.php principal -->
+                    <a href="<?php echo $BASE_URL; ?>/meu-historico" class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i> Histórico Completo</a>
                 </div>
             </div>
-            
-            <!-- AQUI ESTÁ A MÁGICA: Substituímos a Table por uma List-Group -->
+
             <div class="list-group list-group-flush" id="lista-impressoes-realtime">
                 <div class="list-group-item text-center text-muted py-5 border-0">
                     <div class="spinner-border text-primary mb-2" role="status"></div><br>
@@ -189,12 +210,14 @@ if ($quota_infinita == 1) {
 
         </div>
     </div>
-
+    <?php include __DIR__ . '/../core/layout/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
         function buscarStatusTempoReal() {
-            fetch('ajax_status.php')
+            // URL Absoluta baseada no ambiente
+
+            fetch('<?php echo $BASE_URL; ?>/ajax/status')
                 .then(response => response.json())
                 .then(data => {
                     const lista = document.getElementById('lista-impressoes-realtime');
@@ -215,7 +238,6 @@ if ($quota_infinita == 1) {
 
                     let html = '';
                     data.forEach(item => {
-                        // Construímos um Card Responsivo com Flexbox (d-flex)
                         html += `
                         <div class="list-group-item impressao-card py-3">
                             <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
@@ -255,6 +277,10 @@ if ($quota_infinita == 1) {
                     const conexao = document.getElementById('status-conexao');
                     conexao.className = "badge bg-danger bg-opacity-10 text-danger border border-danger-subtle me-2";
                     conexao.innerHTML = '<i class="bi bi-wifi-off"></i> Sem Conexão';
+
+                    //Atualiza também o centro da tabela para não ficar preso no "Sincronizando..."
+                    const lista = document.getElementById('lista-impressoes-realtime');
+                    lista.innerHTML = `<div class="list-group-item text-danger text-center py-5 border-0"><i class="bi bi-x-circle display-6 d-block mb-2"></i>Erro ao carregar o histórico. Verifique a consola (F12).</div>`;
                 });
         }
 
@@ -262,4 +288,5 @@ if ($quota_infinita == 1) {
         setInterval(buscarStatusTempoReal, 3000);
     </script>
 </body>
+
 </html>

@@ -2,14 +2,30 @@
 
 /**
  * IBQUOTA 3 - Meu Histórico Completo
+ * ATUALIZADO: Rotas Limpas, Deteção de Ambiente e Caminhos Blindados
  */
-include_once '../core/db.php';
-include_once '../core/functions.php';
 
-sec_session_start();
+// 1. INCLUDES BLINDADOS (Corrigido para voltar apenas 1 nível: public -> core)
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
 
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'];
+if ($host_atual === 'localhost' || $host_atual === '127.0.0.1') {
+    $BASE_URL = '/gg'; // Ambiente Local
+} else {
+    $BASE_URL = ''; // Ambiente de Produção
+}
+
+// 2. SEGURANÇA E REDIRECIONAMENTO COM ROTA LIMPA
 if (!isset($_SESSION['usuario'])) {
-    header("Location: login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
@@ -41,10 +57,12 @@ $usuario_logado = $_SESSION['usuario'];
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="meu_painel.php"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
+            <!-- Link atualizado para a rota do painel -->
+            <a class="navbar-brand fw-bold" href="<?php echo $BASE_URL; ?>/meu-painel"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
             <div class="d-flex text-white align-items-center">
                 <span class="me-3"><i class="bi bi-person-circle me-1"></i> Olá, <b><?php echo htmlspecialchars($usuario_logado); ?></b></span>
-                <a href="../core/auth/logout.php" class="btn btn-sm btn-outline-light px-3"><i class="bi bi-box-arrow-right me-1"></i> Sair</a>
+                <!-- Link atualizado para a rota de logout -->
+                <a href="<?php echo $BASE_URL; ?>/logout" class="btn btn-sm btn-outline-light px-3"><i class="bi bi-box-arrow-right me-1"></i> Sair</a>
             </div>
         </div>
     </nav>
@@ -52,7 +70,8 @@ $usuario_logado = $_SESSION['usuario'];
     <div class="container">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h3 class="fw-bold text-dark mb-0"><i class="bi bi-search text-primary me-2"></i> Histórico Completo</h3>
-            <a href="meu_painel.php" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
+            <!-- Link de voltar atualizado -->
+            <a href="<?php echo $BASE_URL; ?>/meu-painel" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
         </div>
 
         <div class="card shadow-sm border-0 mb-5">
@@ -119,7 +138,7 @@ $usuario_logado = $_SESSION['usuario'];
             </div>
         </div>
     </div>
-
+    <?php include __DIR__ . '/../core/layout/footer.php'; ?>
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

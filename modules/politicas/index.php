@@ -1,26 +1,29 @@
 <?php
 
 /**
- * IBQUOTA 3
- * Lista de Políticas - Refatorada (Bootstrap 5)
+ * IFQUOTA - Lista de Políticas de Impressão
+ * Gerenciamento de cotas e regras de utilização.
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
-sec_session_start();
 
-// 1. Verificação de sessão ajustada e caminho do login corrigido
-if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] !== 2) {
-    header("Location: ../../public/login.php");
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
+
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 2) {
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
-// 2. Caminho do Header corrigido
-include '../../core/layout/header.php';
+include __DIR__ . '/../../core/layout/header.php';
 
-// Paginação básica
 $p = (isset($_GET['p'])) ? (int)$_GET['p'] : 1;
 $p = ($p < 1) ? 1 : $p;
-// Se não achar a constante, usa 20 como padrão
 if (!defined('QTDE_POR_PAGINA')) define('QTDE_POR_PAGINA', 20);
 
 $p_inicio = (QTDE_POR_PAGINA * $p) - QTDE_POR_PAGINA;
@@ -41,8 +44,8 @@ $stmt->bind_result($cod_politica, $nome, $quota_padrao, $quota_infinita);
 
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
     <div>
-        <h3 class="fw-bold text-dark mb-0"><i class="bi bi-shield-lock text-muted me-2"></i> Políticas de Impressão</h3>
-        <p class="text-muted mb-0 small">Crie regras de cota e aplique-as aos grupos do campus.</p>
+        <h3 class="fw-bold text-dark mb-0"><i class="bi bi-shield-lock-fill text-primary me-2"></i> Políticas de Impressão</h3>
+        <p class="text-muted mb-0 small">Defina os limites de cota para os diferentes perfis do campus.</p>
     </div>
     <div>
         <button type="button" class="btn btn-success shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalAddPolitica">
@@ -53,90 +56,92 @@ $stmt->bind_result($cod_politica, $nome, $quota_padrao, $quota_infinita);
 
 <?php
 if (isset($_GET['msg'])) {
-    // Define a mensagem e a cor (tipo) baseado no que veio no link
-    if ($_GET['msg'] == 'del') {
-        $msg = 'Política excluída com sucesso!';
-        $tipo = 'warning';
-    } elseif ($_GET['msg'] == 'duplicado') {
-        $msg = 'Atenção: Já existe uma política com este nome!';
-        $tipo = 'danger'; // Cor vermelha
-    } else {
-        $msg = 'Política criada com sucesso!';
-        $tipo = 'success'; // Cor verde
-    }
+    $alertas = [
+        'del' => ['text' => 'Política removida com sucesso.', 'type' => 'warning'],
+        'duplicado' => ['text' => 'Erro: Já existe uma política com este nome.', 'type' => 'danger'],
+        'add' => ['text' => 'Nova política criada com sucesso!', 'type' => 'success'],
+        'upd' => ['text' => 'Configurações atualizadas.', 'type' => 'success']
+    ];
 
-    echo "<div class='alert alert-{$tipo} shadow-sm'><i class='bi bi-info-circle-fill me-2'></i> {$msg} <button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    $m = $_GET['msg'];
+    if (array_key_exists($m, $alertas)) {
+        echo "<div class='alert alert-{$alertas[$m]['type']} border-0 shadow-sm'><i class='bi bi-info-circle-fill me-2'></i> {$alertas[$m]['text']} <button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    }
 }
 ?>
 
-<div class="card shadow-sm border-0">
+<div class="card shadow-sm border-0 mb-4">
     <div class="table-responsive">
-        <table class="table table-hover table-striped align-middle mb-0">
-            <thead class="table-light">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light text-secondary">
                 <tr>
                     <th class="ps-4">Nome da Política</th>
-                    <th>Regra de Cota</th>
+                    <th>Regra de Cota Mensal</th>
                     <th class="text-end pe-4">Ações</th>
                 </tr>
             </thead>
             <tbody>
-                <?php
-                if ($stmt->num_rows > 0) {
-                    while ($stmt->fetch()) {
-                        echo "<tr>";
-                        echo "<td class='ps-4 fw-bold text-dark'>{$nome}</td>";
-
-                        if ($quota_infinita == 1) {
-                            echo "<td><span class='badge text-bg-secondary'><i class='bi bi-infinity'></i> Infinita / Ilimitada</span></td>";
-                        } else {
-                            echo "<td><span class='badge text-bg-success'>{$quota_padrao} páginas</span> limitadas</td>";
-                        }
-
-                        echo "<td class='text-end pe-4'>";
-                        echo "<a href='politica_gerenciar.php?cod_politica={$cod_politica}' class='btn btn-sm btn-outline-primary me-1' title='Gerenciar Regras e Grupos'><i class='bi bi-gear-fill'></i> Configurar</a>";
-                        echo "<a href='politica_excluir.php?cod_politica={$cod_politica}' class='btn btn-sm btn-outline-danger' title='Excluir Política' onclick=\"return confirm('ATENÇÃO: Ao excluir esta política, os grupos associados ficarão sem regra! Deseja continuar?');\"><i class='bi bi-trash'></i></a>";
-                        echo "</td>";
-                        echo "</tr>";
-                    }
-                } else {
-                    echo "<tr><td colspan='3' class='text-center text-muted py-4'>Nenhuma política encontrada.</td></tr>";
-                }
-                ?>
+                <?php if ($stmt->num_rows > 0): ?>
+                    <?php while ($stmt->fetch()): ?>
+                        <tr>
+                            <td class="ps-4 fw-bold text-dark"><?php echo htmlspecialchars($nome); ?></td>
+                            <td>
+                                <?php if ($quota_infinita == 1): ?>
+                                    <span class="badge rounded-pill bg-info text-dark"><i class="bi bi-infinity"></i> Ilimitada</span>
+                                <?php else: ?>
+                                    <span class="badge rounded-pill bg-success px-3"><?php echo $quota_padrao; ?> páginas</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-end pe-4">
+                                <a href="<?php echo $BASE_URL; ?>/admin/politicas/gerenciar?cod_politica=<?php echo $cod_politica; ?>" class="btn btn-sm btn-outline-primary shadow-sm me-1">
+                                    <i class="bi bi-gear-fill"></i> Configurar
+                                </a>
+                                <a href="<?php echo $BASE_URL; ?>/admin/politicas/excluir?cod_politica=<?php echo $cod_politica; ?>" class="btn btn-sm btn-outline-danger shadow-sm" onclick="return confirm('ATENÇÃO: Ao excluir esta política, os grupos associados ficarão sem regra! Deseja continuar?');">
+                                    <i class="bi bi-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endwhile; ?>
+                <?php else: ?>
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-5">Nenhuma política cadastrada no IFQUOTA.</td>
+                    </tr>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>
 </div>
 
-<div class="d-flex justify-content-center mt-3">
+<div class="d-flex justify-content-center mt-4">
     <?php barra_de_paginas($p, $p_num_registros); ?>
 </div>
 
 <div class="modal fade" id="modalAddPolitica" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
+        <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-success text-white">
-                <h5 class="modal-title fw-bold"><i class="bi bi-shield-plus me-2"></i>Criar Política</h5>
+                <h5 class="modal-title fw-bold"><i class="bi bi-shield-plus me-2"></i>Nova Política de Cota</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form action="politica_add.php" method="post">
-                <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
+            <form action="<?php echo $BASE_URL; ?>/admin/politicas/add" method="post">
+                <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                 <div class="modal-body p-4">
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Nome da Política</label>
-                        <input type="text" class="form-control" name="nome" placeholder="Ex: Cota Professores, Cota Alunos..." required autofocus>
+                        <label class="form-label fw-bold">Descrição da Política</label>
+                        <input type="text" class="form-control" name="nome" placeholder="Ex: Cota Docentes, Alunos Veteranos..." required autofocus>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Cota Padrão (Páginas)</label>
+                        <label class="form-label fw-bold">Quantidade de Páginas</label>
                         <input type="number" class="form-control" name="quota_padrao" value="100" min="0" required>
                     </div>
                     <div class="form-check form-switch mt-4">
                         <input class="form-check-input" type="checkbox" name="quota_infinita" id="infinita" value="1">
-                        <label class="form-check-label fw-bold text-danger" for="infinita">Cota Infinita (Ignora o limite acima)</label>
+                        <label class="form-check-label fw-bold text-primary" for="infinita">Ativar Cota Ilimitada</label>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-success fw-bold"><i class="bi bi-save me-1"></i> Salvar Política</button>
+                <div class="modal-footer bg-light border-0">
+                    <button type="button" class="btn btn-link text-secondary text-decoration-none" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success px-4 fw-bold shadow-sm">Criar Política</button>
                 </div>
             </form>
         </div>
@@ -144,6 +149,6 @@ if (isset($_GET['msg'])) {
 </div>
 
 <?php
-// 3. Caminho do Footer corrigido
-include '../../core/layout/footer.php';
+// Correção Crítica do Caminho
+include __DIR__ . '/../../core/layout/footer.php';
 ?>

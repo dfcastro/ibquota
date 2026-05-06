@@ -1,28 +1,29 @@
 <?php
 
 /**
- * IBQUOTA 3 - Relatório Único e Detalhado de Impressões
- * Combina filtros de data, usuário, status, soma de páginas e DataTables.
+ * IFQUOTA - Relatório Único e Detalhado de Impressões
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
-sec_session_start();
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
 
-// 1. Verificação de sessão atualizada com caminho correto para o login
-if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-    header("Location: ../../public/login.php");
-    exit();
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
 }
 
-// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
+
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
+   header("Location: " . $BASE_URL . "/login");
+   exit();
+}
+
 // TRATAMENTO DOS FILTROS (GET)
-// ==========================================
 $filtro_usuario = isset($_GET['nome_usuario']) ? trim($_GET['nome_usuario']) : '';
 $data_inicial = isset($_GET['data_inicial']) ? trim($_GET['data_inicial']) : '';
 $data_final = isset($_GET['data_final']) ? trim($_GET['data_final']) : '';
 $filtro_status = isset($_GET['status']) ? trim($_GET['status']) : '';
 
-// Constrói a query base
 $query = "SELECT DATE_FORMAT(data_impressao, '%d/%m/%Y'), hora_impressao, job_id, impressora, 
                  usuario, estacao, nome_documento, paginas, cod_status_impressao 
           FROM impressoes WHERE 1=1 ";
@@ -34,23 +35,20 @@ if ($filtro_usuario != '') {
    $params[] = $filtro_usuario;
    $types .= "s";
 }
-
 if ($data_inicial != '' && $data_final != '') {
    $query .= " AND data_impressao BETWEEN ? AND ? ";
    $params[] = $data_inicial;
    $params[] = $data_final;
    $types .= "ss";
 }
-
 if ($filtro_status != '') {
    $query .= " AND cod_status_impressao = ? ";
    $params[] = $filtro_status;
    $types .= "i";
 }
 
-$query .= " ORDER BY cod_impressoes DESC LIMIT 1000"; // Limite de 1000 para performance
+$query .= " ORDER BY cod_impressoes DESC LIMIT 1000";
 
-// Prepara e executa a query segura
 $stmt = $mysqli->prepare($query);
 if ($types != "") {
    $stmt->bind_param($types, ...$params);
@@ -59,8 +57,7 @@ $stmt->execute();
 $stmt->store_result();
 $stmt->bind_result($data_impressao, $hora_impressao, $job_id, $impressora, $usuario, $estacao, $nome_documento, $paginas, $cod_status_impressao);
 
-// Caminho do Header corrigido
-include '../../core/layout/header.php';
+include __DIR__ . '/../../core/layout/header.php';
 ?>
 
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
@@ -69,17 +66,22 @@ include '../../core/layout/header.php';
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
    <div>
       <h3 class="fw-bold text-dark mb-0"><i class="bi bi-printer text-muted me-2"></i> Relatório de Impressões</h3>
-      <p class="text-muted mb-0 small">Analise o histórico, filtre por período, usuário ou status e exporte os dados.</p>
+      <p class="text-muted mb-0 small">Analise o histórico, filtre por período, utilizador ou status e exporte os dados.</p>
+   </div>
+   <div>
+      <a href="<?php echo $BASE_URL; ?>/admin/dashboard" class="btn btn-outline-secondary shadow-sm fw-bold">
+          <i class="bi bi-arrow-left me-1"></i> Voltar
+      </a>
    </div>
 </div>
 
-<div class="card shadow-sm border-0 mb-4">
+<div class="card shadow-sm border-0 mb-4 border-top border-primary border-3">
    <div class="card-header bg-white fw-bold py-3"><i class="bi bi-funnel me-2"></i>Filtros de Pesquisa</div>
    <div class="card-body bg-light">
-      <form action="" method="GET" class="row g-3 align-items-end">
+      <form action="<?php echo $BASE_URL; ?>/admin/relatorio" method="GET" class="row g-3 align-items-end">
          <div class="col-md-3">
             <label class="form-label fw-bold small text-muted">Usuário (Opcional)</label>
-            <div class="input-group">
+            <div class="input-group shadow-sm">
                <span class="input-group-text bg-white"><i class="bi bi-person"></i></span>
                <input type="text" class="form-control" name="nome_usuario" value="<?php echo htmlspecialchars($filtro_usuario); ?>" placeholder="Ex: joao.silva">
             </div>
@@ -87,31 +89,31 @@ include '../../core/layout/header.php';
 
          <div class="col-md-2">
             <label class="form-label fw-bold small text-muted">Data Inicial</label>
-            <input type="date" class="form-control" name="data_inicial" value="<?php echo $data_inicial; ?>">
+            <input type="date" class="form-control shadow-sm" name="data_inicial" value="<?php echo htmlspecialchars($data_inicial); ?>">
          </div>
          <div class="col-md-2">
             <label class="form-label fw-bold small text-muted">Data Final</label>
-            <input type="date" class="form-control" name="data_final" value="<?php echo $data_final; ?>">
+            <input type="date" class="form-control shadow-sm" name="data_final" value="<?php echo htmlspecialchars($data_final); ?>">
          </div>
 
          <div class="col-md-3">
             <label class="form-label fw-bold small text-muted">Status da Impressão</label>
-            <div class="input-group">
+            <div class="input-group shadow-sm">
                <span class="input-group-text bg-white"><i class="bi bi-info-circle"></i></span>
                <select class="form-select" name="status">
                   <option value="">Todos os Status</option>
                   <?php
-                  // Busca os status na tabela original
                   $res_status = $mysqli->query("SELECT cod_status_impressao, nome_status FROM status_impressao ORDER BY cod_status_impressao");
                   while ($st = $res_status->fetch_assoc()) {
                      $selected = ($filtro_status == $st['cod_status_impressao']) ? 'selected' : '';
                      $nome_exibicao = $st['nome_status'];
 
-                     // Aplica a nossa tradução para o menu dropdown também!
                      if (stripos($nome_exibicao, 'cadastrado') !== false || $st['cod_status_impressao'] == 3) {
                         $nome_exibicao = "Bloqueado: Sem Grupo/Cota";
                      } elseif (stripos($nome_exibicao, 'excedida') !== false) {
                         $nome_exibicao = "Bloqueado: Cota Excedida";
+                     } elseif ($st['cod_status_impressao'] == 10) {
+                        $nome_exibicao = "Erro Físico / Impressora Offline";
                      }
 
                      echo "<option value='{$st['cod_status_impressao']}' {$selected}>{$nome_exibicao}</option>";
@@ -122,16 +124,9 @@ include '../../core/layout/header.php';
          </div>
 
          <div class="col-md-2 d-grid gap-2">
-            <button type="submit" class="btn btn-primary fw-bold"><i class="bi bi-search me-1"></i> Filtrar</button>
+            <button type="submit" class="btn btn-primary fw-bold shadow-sm"><i class="bi bi-search me-1"></i> Filtrar</button>
          </div>
       </form>
-
-      <div class="mt-3 text-end">
-         <span class="small text-muted me-2">Filtros rápidos:</span>
-         <a href="?data_inicial=<?php echo date('Y-m-d'); ?>&data_final=<?php echo date('Y-m-d'); ?>" class="btn btn-sm btn-outline-secondary">Hoje</a>
-         <a href="?data_inicial=<?php echo date('Y-m-d', strtotime('-1 day')); ?>&data_final=<?php echo date('Y-m-d', strtotime('-1 day')); ?>" class="btn btn-sm btn-outline-secondary">Ontem</a>
-         <a href="index.php" class="btn btn-sm btn-outline-danger ms-2"><i class="bi bi-eraser"></i> Limpar Tudo</a>
-      </div>
    </div>
 </div>
 
@@ -157,13 +152,10 @@ include '../../core/layout/header.php';
 
                if ($stmt->num_rows > 0) {
                   while ($stmt->fetch()) {
-
-                     // Busca o nome original
                      $status_nome = status_impressao($cod_status_impressao);
 
-                     // Tradutor Visual
                      if ($cod_status_impressao == 1) {
-                        $total_paginas += $paginas; // Só soma se foi impresso com sucesso!
+                        $total_paginas += $paginas;
                         $badge_class = 'text-bg-success';
                         $icone = 'bi-check-circle-fill';
                      } else {
@@ -178,8 +170,15 @@ include '../../core/layout/header.php';
                            $status_nome = "Bloqueado: Cota Excedida";
                            $badge_class = 'bg-danger text-white border border-danger';
                            $icone = 'bi-slash-circle';
+                        } elseif ($cod_status_impressao == 10) {
+                           $status_nome = "Erro Físico / Offline";
+                           $badge_class = 'text-bg-dark';
+                           $icone = 'bi-printer-fill';
                         }
                      }
+                     
+                     // Ajuste para PHP 8.x: mb_convert_encoding é mais seguro que utf8_decode
+                     $doc_seguro = htmlspecialchars(mb_convert_encoding($nome_documento, 'UTF-8', 'auto'));
 
                      echo "<tr>";
                      echo "<td><span class='text-muted small'>#{$job_id}</span></td>";
@@ -187,7 +186,7 @@ include '../../core/layout/header.php';
                      echo "<td class='fw-bold text-dark'>{$usuario}</td>";
                      echo "<td>{$impressora}</td>";
                      echo "<td><span class='badge bg-light text-secondary border font-monospace'>{$estacao}</span></td>";
-                     echo "<td><span class='small text-truncate d-inline-block' style='max-width: 200px;' title='" . htmlspecialchars(utf8_decode($nome_documento)) . "'>" . htmlspecialchars(utf8_decode($nome_documento)) . "</span></td>";
+                     echo "<td><span class='small text-truncate d-inline-block' style='max-width: 200px;' title='{$doc_seguro}'>{$doc_seguro}</span></td>";
                      echo "<td class='text-center fw-bold'>{$paginas}</td>";
                      echo "<td><span class='badge {$badge_class} shadow-sm px-2 py-1'><i class='bi {$icone} me-1'></i>{$status_nome}</span></td>";
                      echo "</tr>\n";
@@ -203,7 +202,7 @@ include '../../core/layout/header.php';
 <?php if ($total_paginas > 0) { ?>
    <div class="row mb-5">
       <div class="col-md-4 ms-auto">
-         <div class="card bg-ifnmg text-white shadow-sm border-0">
+         <div class="card bg-success text-white shadow-sm border-0">
             <div class="card-body d-flex justify-content-between align-items-center p-3">
                <div>
                   <h6 class="mb-0 text-white-50 text-uppercase fw-bold" style="font-size: 0.8rem;">Páginas Impressas com Sucesso</h6>
@@ -216,8 +215,9 @@ include '../../core/layout/header.php';
    </div>
 <?php } ?>
 
-<?php include '../../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../../core/layout/footer.php'; ?>
 
+<!-- Scripts do DataTables para Exportação -->
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
@@ -254,11 +254,11 @@ include '../../core/layout/header.php';
             }
          ],
          order: [
-            [1, 'desc']
+            [1, 'desc'] // Ordena pela Data e Hora
          ],
          columnDefs: [{
             orderable: false,
-            targets: 5
+            targets: 5 // O documento geralmente não precisa de ordenação e atrapalha
          }]
       });
    });

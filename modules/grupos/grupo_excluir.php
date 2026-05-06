@@ -1,15 +1,20 @@
 <?php
+
 /**
- * AÇÃO SILENCIOSA: Excluir Grupo
+ * IFQUOTA - AÇÃO SILENCIOSA: Excluir Grupo
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
 
-sec_session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
 
-// 1. Verificação de sessão corrigida (sem login_check e apontando para ../../)
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
+
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-    header("Location: ../../public/login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
@@ -17,7 +22,6 @@ if (isset($_GET['cod_grupo'])) {
     $cod_grupo = (int)$_GET['cod_grupo'];
 
     if ($cod_grupo > 0) {
-        // Primeiro, descobrimos o nome do grupo (para apagar as políticas atreladas a ele)
         $stmt = $mysqli->prepare("SELECT grupo FROM grupos WHERE cod_grupo = ?");
         if ($stmt) {
             $stmt->bind_param('i', $cod_grupo);
@@ -27,7 +31,6 @@ if (isset($_GET['cod_grupo'])) {
             $stmt->close();
 
             if (!empty($nome_grupo)) {
-                // A. Remove das políticas
                 $del1 = $mysqli->prepare("DELETE FROM politica_grupo WHERE grupo = ?");
                 $del1->bind_param('s', $nome_grupo);
                 $del1->execute();
@@ -35,7 +38,6 @@ if (isset($_GET['cod_grupo'])) {
             }
         }
 
-        // B. Remove os usuários que estavam neste grupo
         $del2 = $mysqli->prepare("DELETE FROM grupo_usuario WHERE cod_grupo = ?");
         if ($del2) {
             $del2->bind_param('i', $cod_grupo);
@@ -43,7 +45,6 @@ if (isset($_GET['cod_grupo'])) {
             $del2->close();
         }
 
-        // C. Finalmente, exclui o grupo em si
         $del3 = $mysqli->prepare("DELETE FROM grupos WHERE cod_grupo = ?");
         if ($del3) {
             $del3->bind_param('i', $cod_grupo);
@@ -52,8 +53,5 @@ if (isset($_GET['cod_grupo'])) {
         }
     }
 }
-
-// Volta para a lista com o alerta amarelo de exclusão
-header("Location: index.php?msg=del");
+header("Location: " . $BASE_URL . "/admin/grupos?msg=del");
 exit();
-?>

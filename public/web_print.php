@@ -3,15 +3,35 @@
 /**
  * IBQUOTA 3 - WEB PRINT (Impressão sem Fios via CUPS)
  * Com Pré-visualização, Filtro Inteligente, UI Responsiva e Seleção Agrupada de Impressoras
+ * ATUALIZADO: Rotas Limpas, CSRF e Caminhos Blindados
  */
-include_once '../core/db.php';
-include_once '../core/functions.php';
 
-sec_session_start();
+// 1. INCLUDES BLINDADOS (Corrigido o /../)
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
 
-// 1. Validação de Sessão
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'];
+if ($host_atual === 'localhost' || $host_atual === '127.0.0.1') {
+    $BASE_URL = '/gg'; // Ambiente Local
+} else {
+    $BASE_URL = ''; // Ambiente de Produção
+}
+
+// Garante que a sessão possui o Token CSRF
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// 2. Validação de Sessão Segura (Redireciona para a Rota Limpa)
 if (!isset($_SESSION['usuario'])) {
-    header("Location: login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
@@ -20,7 +40,7 @@ $msg = "";
 $tipo_msg = "";
 
 // ======================================================================
-// NOVO: Dicionário de Locais das Impressoras Agrupado por Categorias
+// Dicionário de Locais das Impressoras Agrupado por Categorias
 // ======================================================================
 $locais_impressoras_agrupado = [
     'Administração e TI' => [
@@ -39,7 +59,7 @@ $locais_impressoras_agrupado = [
     'Pedagógico II e Laboratórios' => [
         'imp-prof-p2-01'    => 'Sala Professores Pedagógico II',
         'imp-lab-solos-01'  => 'Prédio Lab Solos',
-       
+
     ],
     'Apoio ao Aluno' => [
         'imp-biblioteca-01' => 'Biblioteca',
@@ -83,7 +103,9 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
     // A FECHADURA DE SEGURANÇA: Valida o Token CSRF antes de processar o PDF
     $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
-    validar_csrf_token($token_recebido);
+    if (!hash_equals($_SESSION['csrf_token'], $token_recebido)) {
+        die("Tentativa inválida de submissão do formulário (Erro CSRF).");
+    }
 
     $impressora_escolhida = trim($_POST['impressora']);
     $copias = (int)$_POST['copias'];
@@ -154,10 +176,10 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
                 $nome_limpo = preg_replace('/[^a-zA-Z0-9.\-_]/', '_', $nome_original);
                 $novo_nome = "REQ_" . time() . "_" . $nome_limpo;
-                $destino_final = "uploads/coloridas/" . $novo_nome;
+                $destino_final = __DIR__ . "/../uploads/coloridas/" . $novo_nome;
 
-                if (!is_dir('uploads/coloridas/')) {
-                    mkdir('uploads/coloridas/', 0777, true);
+                if (!is_dir(__DIR__ . '/../uploads/coloridas/')) {
+                    mkdir(__DIR__ . '/../uploads/coloridas/', 0777, true);
                 }
 
                 if (move_uploaded_file($caminho_temporario, $destino_final)) {
@@ -205,10 +227,13 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                         $total_mes = $res_cota->fetch_assoc()['total'] ?? 0;
                         $consumo_previsto = $total_mes + $total_folhas_novas;
 
+                        // Caminho relativo para a Base de Dados (public/uploads)
+                        $caminho_bd = "uploads/coloridas/" . $novo_nome;
+
                         if ($auto_aprovar == 1 && $consumo_previsto <= 500) {
 
                             $stmt_ped = $mysqli->prepare("INSERT INTO pedidos_coloridos (usuario, arquivo_nome, arquivo_caminho, paginas, paginas_especificas, copias, impressora, status, aprovado_por) VALUES (?, ?, ?, ?, ?, ?, ?, 'Aprovado', 'Sistema Automático')");
-                            $stmt_ped->bind_param('sssisis', $usuario_logado, $nome_original, $destino_final, $qtd_final, $string_paginas_finais, $copias, $impressora_escolhida);
+                            $stmt_ped->bind_param('sssisis', $usuario_logado, $nome_original, $caminho_bd, $qtd_final, $string_paginas_finais, $copias, $impressora_escolhida);
                             $stmt_ped->execute();
                             $stmt_ped->close();
 
@@ -228,7 +253,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                             $tipo_msg = "success";
                         } else {
                             $stmt_ped = $mysqli->prepare("INSERT INTO pedidos_coloridos (usuario, arquivo_nome, arquivo_caminho, paginas, paginas_especificas, copias, impressora) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                            $stmt_ped->bind_param('sssisis', $usuario_logado, $nome_original, $destino_final, $qtd_final, $string_paginas_finais, $copias, $impressora_escolhida);
+                            $stmt_ped->bind_param('sssisis', $usuario_logado, $nome_original, $caminho_bd, $qtd_final, $string_paginas_finais, $copias, $impressora_escolhida);
                             $stmt_ped->execute();
                             $stmt_ped->close();
 
@@ -364,16 +389,13 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             color: #6c757d;
         }
 
-        /* Responsividade para o nome do documento */
         .doc-nome-responsivo {
             max-width: 120px;
-            /* Para telemóveis */
         }
 
         @media (min-width: 768px) {
             .doc-nome-responsivo {
                 max-width: 300px;
-                /* Para tablets e computadores */
             }
         }
     </style>
@@ -383,10 +405,10 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="meu_painel.php"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
+            <a class="navbar-brand fw-bold" href="<?php echo $BASE_URL; ?>/meu-painel"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
             <div class="d-flex text-white align-items-center">
                 <span class="me-3 d-none d-md-inline"><i class="bi bi-person-circle me-1"></i> Olá, <b><?php echo htmlspecialchars($usuario_logado); ?></b></span>
-                <a href="../core/auth/logout.php" class="btn btn-sm btn-outline-light px-3"><i class="bi bi-box-arrow-right me-1"></i> Sair</a>
+                <a href="<?php echo $BASE_URL; ?>/logout" class="btn btn-sm btn-outline-light px-3"><i class="bi bi-box-arrow-right me-1"></i> Sair</a>
             </div>
         </div>
     </nav>
@@ -394,7 +416,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
     <div class="container" style="max-width: 900px;">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h3 class="fw-bold text-dark mb-0"><i class="bi bi-cloud-arrow-up text-primary me-2"></i> Web Print</h3>
-            <a href="meu_painel.php" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
+            <a href="<?php echo $BASE_URL; ?>/meu-painel" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
         </div>
 
         <?php if ($msg != "") { ?>
@@ -415,8 +437,8 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                     </div>
                 <?php } else { ?>
 
-                    <form action="web_print.php" method="post" enctype="multipart/form-data" id="printForm">
-                        <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
+                    <form action="<?php echo $BASE_URL; ?>/web-print" method="post" enctype="multipart/form-data" id="printForm">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="acao" value="enviar_impressao">
 
                         <!-- ÁREA DE UPLOAD MELHORADA -->
@@ -451,7 +473,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                                 </div>
                             </div>
 
-                            <!-- Grelha responsiva: 2 colunas em telemóveis, 3 em tablets, 5 em desktops grandes -->
+                            <!-- Grelha responsiva -->
                             <div id="pdf-preview-container" class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3 mb-4">
                             </div>
 
@@ -469,7 +491,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                                 <select class="form-select border-success" name="impressora" required>
                                     <option value="" disabled selected>Escolha o local...</option>
                                     <?php
-                                    // Geração Inteligente de Categorias (OptGroup)
                                     foreach ($locais_impressoras_agrupado as $categoria => $impressoras) {
                                         $imprimir_categoria = false;
                                         $opcoes_html = "";
@@ -488,7 +509,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                                         }
                                     }
 
-                                    // Impressoras permitidas que não estão em nenhuma categoria (Fallback de Segurança)
                                     foreach ($impressoras_permitidas as $imp_id) {
                                         if (!array_key_exists($imp_id, $locais_impressoras_plano)) {
                                             echo "<option value=\"" . htmlspecialchars($imp_id) . "\">Impressora Desconhecida (" . htmlspecialchars($imp_id) . ")</option>";
@@ -549,7 +569,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             </div>
         </div>
     </div>
-
+    <?php include __DIR__ . '/../core/layout/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
@@ -560,15 +580,12 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             const file = e.target.files[0];
             if (!file || file.type !== 'application/pdf') return;
 
-            // Muda o visual: Esconde o botão de upload e mostra a caixa de ficheiro selecionado
             document.getElementById('label-upload').classList.add('d-none');
             const fileInfoBox = document.getElementById('file-info-box');
             fileInfoBox.classList.remove('d-none');
             document.getElementById('nome-arquivo-selecionado').innerText = file.name;
-            // Adapta o nome do ficheiro para não rebentar o ecrã no mobile
             document.getElementById('nome-arquivo-selecionado').title = file.name;
 
-            // Mostra o container de preview com a caixa de texto integrada
             document.getElementById('preview-section').classList.remove('d-none');
 
             const container = document.getElementById('pdf-preview-container');
@@ -631,7 +648,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                 }
 
                 if (pdf.numPages > 50) {
-                    container.innerHTML += `<div class="col-12 text-center text-muted mt-3 small"><i class="bi bi-info-circle me-1"></i> A visualização foi limitada às primeiras 50 páginas por performance, mas o documento completo será impresso se as páginas permanecerem selecionadas.</div>`;
+                    container.innerHTML += `<div class="col-12 text-center text-muted mt-3 small"><i class="bi bi-info-circle me-1"></i> A visualização foi limitada às primeiras 50 páginas por performance.</div>`;
                 }
 
                 atualizarInputHidden();
@@ -644,18 +661,11 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
         // 2. FUNÇÃO PARA REMOVER O FICHEIRO
         function removerArquivo() {
-            // Limpa o input do ficheiro
             document.getElementById('arquivo_pdf').value = '';
-
-            // Restaura o visual da área de Upload
             document.getElementById('label-upload').classList.remove('d-none');
             document.getElementById('file-info-box').classList.add('d-none');
-
-            // Esconde o painel de preview
             document.getElementById('preview-section').classList.add('d-none');
             document.getElementById('pdf-preview-container').innerHTML = '';
-
-            // Limpa a seleção de páginas
             selectedPages.clear();
             document.getElementById('paginas_selecionadas').value = '';
             document.getElementById('btn-submit').disabled = false;
@@ -716,14 +726,15 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
         });
 
         // =====================================
-        // RASTREADOR DE TEMPO REAL
+        // RASTREADOR DE TEMPO REAL (AJAX CORRIGIDO)
         // =====================================
         const msgSuccess = document.querySelector('.alert-success');
         if (msgSuccess) {
             document.getElementById('card-tracking').classList.remove('d-none');
 
             function trackLatestJob() {
-                fetch('ajax_status.php')
+                // Rota corrigida para a URL Base dinâmica
+                fetch('<?php echo $BASE_URL; ?>/public/ajax_status.php')
                     .then(response => response.json())
                     .then(data => {
                         if (data.erro || data.length === 0) return;

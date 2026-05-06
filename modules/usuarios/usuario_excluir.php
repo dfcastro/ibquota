@@ -1,16 +1,20 @@
 <?php
 
 /**
- * AÇÃO SILENCIOSA: Excluir Usuário e suas Cotas
+ * IFQUOTA - AÇÃO SILENCIOSA: Excluir Usuário e suas Cotas
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
 
-sec_session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
 
-// 1. Verificação de sessão atualizada (../../)
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
+
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-    header("Location: ../../public/login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
@@ -18,7 +22,6 @@ if (isset($_GET['cod_usuario'])) {
     $cod_usuario = (int)$_GET['cod_usuario'];
 
     if ($cod_usuario > 0) {
-        // Primeiro, descobrimos o nome de rede (login) do usuário
         $stmt = $mysqli->prepare("SELECT usuario FROM usuarios WHERE cod_usuario = ?");
         if ($stmt) {
             $stmt->bind_param('i', $cod_usuario);
@@ -28,7 +31,6 @@ if (isset($_GET['cod_usuario'])) {
             $stmt->close();
 
             if (!empty($nome_usuario)) {
-                // A. Apaga o saldo de cotas ativas (tabela quota_usuario usa o nome em texto)
                 $del1 = $mysqli->prepare("DELETE FROM quota_usuario WHERE usuario = ?");
                 $del1->bind_param('s', $nome_usuario);
                 $del1->execute();
@@ -36,7 +38,6 @@ if (isset($_GET['cod_usuario'])) {
             }
         }
 
-        // B. Remove os vínculos deste usuário com qualquer grupo
         $del2 = $mysqli->prepare("DELETE FROM grupo_usuario WHERE cod_usuario = ?");
         if ($del2) {
             $del2->bind_param('i', $cod_usuario);
@@ -44,7 +45,6 @@ if (isset($_GET['cod_usuario'])) {
             $del2->close();
         }
 
-        // C. Finalmente, exclui o usuário do sistema
         $del3 = $mysqli->prepare("DELETE FROM usuarios WHERE cod_usuario = ?");
         if ($del3) {
             $del3->bind_param('i', $cod_usuario);
@@ -53,7 +53,5 @@ if (isset($_GET['cod_usuario'])) {
         }
     }
 }
-
-// Retorna para o index disparando a mensagem amarela de Exclusão
-header("Location: index.php?msg=del");
+header("Location: " . $BASE_URL . "/admin/contas?msg=del");
 exit();

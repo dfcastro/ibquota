@@ -1,16 +1,40 @@
 <?php
 
 /**
- * IBQUOTA 3 - LOGIN HÍBRIDO (VERSÃO FINAL ESTRUTURADA E AUDITADA)
+ * IBQUOTA 3 - LOGIN HÍBRIDO (COM ROTAS LIMPAS E PROTEÇÃO CSRF)
  */
-include_once '../core/db.php';
-include_once '../core/functions.php';
+// 1. INCLUDES BLINDADOS COM __DIR__
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
 
-sec_session_start();
+if (session_status() === PHP_SESSION_NONE) {
+  sec_session_start();
+}
+
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'];
+if ($host_atual === 'localhost' || $host_atual === '127.0.0.1') {
+  $BASE_URL = '/gg'; // Ambiente Local
+} else {
+  $BASE_URL = ''; // Ambiente de Produção
+}
+
+// Gera o Token CSRF se não existir
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 
 $erro = "";
 
 if (isset($_POST['login'], $_POST['senha'])) {
+  // 2. VALIDAÇÃO DO TOKEN CSRF
+  $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+  if (!hash_equals($_SESSION['csrf_token'], $token_recebido)) {
+    die("Tentativa de login inválida ou expirada. Volte e tente novamente.");
+  }
+
   $usuario = trim(strtolower($_POST['login']));
   $senha = $_POST['senha'];
   $admin_logado = false;
@@ -32,26 +56,23 @@ if (isset($_POST['login'], $_POST['senha'])) {
       $stmt_adm->bind_result($cod_adm, $db_login, $db_senha, $db_permissao);
       $stmt_adm->fetch();
 
-      // Verifica se a senha bate com o Hash SHA-512
       $senha_hash = hash('sha512', $senha);
 
       if ($senha_hash === $db_senha || password_verify($senha, $db_senha)) {
-
-        // --- GRAVA LOG DE SUCESSO DO ADMIN ---
+        // GRAVA LOG DE SUCESSO
         $stmt_log = $mysqli->prepare("INSERT INTO logs_acesso (usuario, ip, status, user_agent) VALUES (?, ?, 'Sucesso (Admin)', ?)");
         $stmt_log->bind_param('sss', $usuario, $ip_acesso, $navegador);
         $stmt_log->execute();
         $stmt_log->close();
 
-        // Sucesso! Registra a sessão do Administrador
         $_SESSION['usuario'] = $db_login;
         $_SESSION['permissao'] = $db_permissao;
         $_SESSION['login_string'] = hash('sha512', $db_senha . ($_SERVER['HTTP_USER_AGENT'] ?? ''));
 
         $admin_logado = true;
 
-        // Vai para o roteador na raiz (que jogará para o painel admin)
-        header("Location: ../index.php");
+        // 3. REDIRECIONA PARA A ROTA LIMPA DO ADMIN
+        header("Location: " . $BASE_URL . "/admin/dashboard");
         exit();
       }
     }
@@ -86,26 +107,24 @@ if (isset($_POST['login'], $_POST['senha'])) {
             $dn_usuario = $info[0]["dn"];
 
             if (@ldap_bind($ldapconn, $dn_usuario, $senha)) {
-
               $stmt_chk = $mysqli->prepare("SELECT usuario FROM usuarios WHERE usuario = ?");
               $stmt_chk->bind_param('s', $usuario);
               $stmt_chk->execute();
               $stmt_chk->store_result();
 
               if ($stmt_chk->num_rows > 0) {
-
-                // --- GRAVA LOG DE SUCESSO DO AD ---
+                // GRAVA LOG DE SUCESSO DO AD
                 $stmt_log = $mysqli->prepare("INSERT INTO logs_acesso (usuario, ip, status, user_agent) VALUES (?, ?, 'Sucesso (AD)', ?)");
                 $stmt_log->bind_param('sss', $usuario, $ip_acesso, $navegador);
                 $stmt_log->execute();
                 $stmt_log->close();
 
-                // Sucesso! Registra a sessão do Professor/Técnico
                 $_SESSION['usuario'] = $usuario;
                 $_SESSION['permissao'] = 1;
                 $_SESSION['login_string'] = hash('sha512', $senha . ($_SERVER['HTTP_USER_AGENT'] ?? ''));
 
-                header("Location: meu_painel.php");
+                // 4. REDIRECIONA PARA A ROTA LIMPA DO PAINEL DO USUÁRIO
+                header("Location: " . $BASE_URL . "/meu-painel");
                 exit();
               } else {
                 $erro = "Usuário na rede, mas não sincronizado.";
@@ -128,13 +147,9 @@ if (isset($_POST['login'], $_POST['senha'])) {
     }
   }
 
-  // =======================================================
-  // AUDITORIA DE FALHAS (Se chegou aqui e tem erro, grava!)
-  // =======================================================
+  // AUDITORIA DE FALHAS
   if (!empty($erro)) {
-    // Pega apenas os primeiros 50 caracteres do erro para não estourar a coluna do banco
     $motivo_falha = substr("Falha: " . $erro, 0, 50);
-
     $stmt_log = $mysqli->prepare("INSERT INTO logs_acesso (usuario, ip, status, user_agent) VALUES (?, ?, ?, ?)");
     $stmt_log->bind_param('ssss', $usuario, $ip_acesso, $motivo_falha, $navegador);
     $stmt_log->execute();
@@ -148,12 +163,13 @@ if (isset($_POST['login'], $_POST['senha'])) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" href="../favicon.png" />
+  <link rel="icon" href="<?php echo $BASE_URL; ?>/favicon.png" />
   <title>Portal de Impressão - IFNMG</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link href="../assets/css/ifnmg.css" rel="stylesheet">
+  <!-- CSS também chama pela raiz dinâmica -->
+  <link href="<?php echo $BASE_URL; ?>/assets/css/ifnmg.css" rel="stylesheet">
 
   <style>
     body.login-page {
@@ -194,7 +210,8 @@ if (isset($_POST['login'], $_POST['senha'])) {
     <div class="card shadow-sm border-0 border-top border-success border-4 rounded-3">
 
       <div class="card-body p-4">
-        <img class="logo-campus img-fluid mb-3" src="../assets/img/logo_almenara.jpg" alt="Logo IFNMG Campus Almenara" onerror="this.style.display='none'">
+        <!-- Caminho da Imagem corrigido -->
+        <img class="logo-campus img-fluid mb-3" src="<?php echo $BASE_URL; ?>/assets/img/logo_almenara.jpg" alt="Logo IFNMG Campus Almenara" onerror="this.style.display='none'">
 
         <h4 class="mb-1 fw-bold text-dark">Portal de Impressão</h4>
         <p class="text-muted small mb-3">Acesso para Servidores e Equipe NTI</p>
@@ -209,8 +226,11 @@ if (isset($_POST['login'], $_POST['senha'])) {
           </div>
         <?php } ?>
 
-        <form action="login.php" method="post" name="login_form">
-          
+        <!-- Form action dinâmico para a Rota de Login -->
+        <form action="<?php echo $BASE_URL; ?>/login" method="post" name="login_form">
+
+          <!-- Token de Segurança CSRF Injetado -->
+          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8'); ?>">
 
           <div class="input-group mb-3 shadow-sm rounded bg-white">
             <span class="input-group-text bg-transparent border-end-0 text-success">
@@ -230,7 +250,8 @@ if (isset($_POST['login'], $_POST['senha'])) {
           </div>
 
           <div class="d-flex justify-content-between align-items-center mb-4">
-            <a href="lembrarsenha.php" class="small text-success text-decoration-none fw-semibold">Esqueceu a senha?</a>
+            <!-- Link amigável para Lembrar Senha -->
+            <a href="<?php echo $BASE_URL; ?>/lembrar-senha" class="small text-success text-decoration-none fw-semibold">Esqueceu a senha?</a>
           </div>
 
           <button class="w-100 btn btn-lg btn-success shadow-sm fw-bold" type="submit">

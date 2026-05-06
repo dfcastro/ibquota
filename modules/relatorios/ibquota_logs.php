@@ -4,20 +4,20 @@
  * IBQUOTA 3
  * Relatório de Logs do Sistema (CUPS/Backend) - Refatorado
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
-sec_session_start();
-
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__.'/../../core/functions.php';
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
 
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-   header("Location: ../../public/login.php");
+   header("Location: /gg/login");
    exit();
 }
 
-include '../../core/layout/header.php';
+include __DIR__ . '/../../core/layout/header.php';
 
-
-// Busca os últimos 500 logs RELEVANTES (esconde o spam de "started")
+// Busca os últimos 500 logs RELEVANTES[cite: 4]
 $query = "SELECT id, mensagem, DATE_FORMAT(datahora, '%d/%m/%Y %H:%i') as datahora 
           FROM log_ibquota 
           WHERE TRIM(mensagem) != 'IBQUOTA started.' 
@@ -47,11 +47,10 @@ $resultado = $mysqli->query($query);
             </thead>
             <tbody>
                <?php
-               // Removido o IF e o Colspan. O DataTables vai gerir o estado "vazio" automaticamente!
                while ($log = $resultado->fetch_assoc()) {
-                  // Destaca palavras críticas como "Erro", "Fail", "Denied"
                   $mensagem = htmlspecialchars(utf8_decode($log['mensagem']));
-                  if (stripos($mensagem, 'erro') !== false || stripos($mensagem, 'fail') !== false) {
+                  // NOVIDADE: Adicionadas as palavras "bloqueio" e "offline" geradas pelo Perl[cite: 4]
+                  if (stripos($mensagem, 'erro') !== false || stripos($mensagem, 'fail') !== false || stripos($mensagem, 'bloqueio') !== false || stripos($mensagem, 'offline') !== false) {
                      $mensagem = "<span class='text-danger fw-bold'><i class='bi bi-x-circle me-1'></i>{$mensagem}</span>";
                   }
 
@@ -67,7 +66,7 @@ $resultado = $mysqli->query($query);
    </div>
 </div>
 
-<?php include '../../core/layout/footer.php'; ?>
+<?php include __DIR__.'/../../core/layout/footer.php'; ?>
 
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
@@ -91,7 +90,7 @@ $resultado = $mysqli->query($query);
          }],
          order: [
             [0, 'desc']
-         ] // Ordena pela data mais recente
+         ]
       });
    });
 </script>

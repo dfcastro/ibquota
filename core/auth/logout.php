@@ -22,5 +22,5 @@ session_destroy();
 // 4. Redireciona de volta para a tela de login
 
 
-header("Location: ../../public/login.php");
+header("Location: /gg/login");
 exit();

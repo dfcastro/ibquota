@@ -4,9 +4,11 @@
  * IBQUOTA 3
  * Configuração Geral e Manutenção do Sistema (Refatorado Bootstrap 5)
  */
-include_once '../core/db.php';
-include_once '../core/functions.php';
-sec_session_start();
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
 
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
     header("Location: ../public/login.php");
@@ -78,7 +80,7 @@ $stmt->close();
 $res_tamanho = $mysqli->query("SELECT COUNT(*) as total FROM impressoes");
 $total_banco = $res_tamanho->fetch_assoc()['total'];
 
-include '../core/layout/header.php';
+include __DIR__ . '/../core/layout/header.php';
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
@@ -241,4 +243,4 @@ include '../core/layout/header.php';
     </div>
 </div>
 
-<?php include '../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../core/layout/footer.php'; ?>

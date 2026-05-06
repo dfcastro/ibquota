@@ -1,15 +1,27 @@
 <?php
 
 /**
- * IBQUOTA 3 - Gestão de Solicitações de Cota Extra (Corrigido com CSRF funcional)
+ * IFQUOTA - Gestão de Solicitações de Cota Extra
+ * Permite ao NTI aprovar ou negar páginas adicionais pedidas pelos utilizadores.
  */
-include_once '../core/db.php';
-include_once '../core/functions.php';
-sec_session_start();
+
+// 1. INCLUDES BLINDADOS
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 // Validação de acesso do Administrador
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-    header("Location: ../public/login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
@@ -17,11 +29,13 @@ $admin_logado = $_SESSION['usuario'];
 $msg = "";
 $tipo_msg = "";
 
+// ==========================================
 // PROCESSAMENTO DAS AÇÕES (APROVAR / NEGAR)
+// ==========================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'])) {
 
-    // 1. VALIDAÇÃO DO TOKEN CSRF (A Fechadura)
-    $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+    // VALIDAÇÃO DO TOKEN CSRF
+    $token_recebido = $_POST['csrf_token'] ?? '';
     validar_csrf_token($token_recebido);
 
     $id_solicitacao = (int)$_POST['id_solicitacao'];
@@ -36,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'])) {
     if ($row = $res->fetch_assoc()) {
         $usuario = $row['usuario'];
         $paginas = $row['paginas'];
-        $motivo_full = "Aprovado via Portal: " . $row['motivo'];
+        $motivo_full = "Aprovado via Portal IFQUOTA: " . $row['motivo'];
 
         if ($acao == 'aprovar') {
             // LÓGICA DE INJEÇÃO DE COTAS
@@ -90,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'])) {
                 $msg = "Cota de {$paginas} páginas injetada para {$usuario} com sucesso!";
                 $tipo_msg = "success";
             } else {
-                $msg = "Erro: Servidor não vinculado a um grupo/política.";
+                $msg = "Erro: Utilizador não vinculado a um grupo/política ativa.";
                 $tipo_msg = "danger";
             }
         } elseif ($acao == 'negar') {
@@ -103,16 +117,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'])) {
     }
 }
 
-include '../core/layout/header.php';
+include __DIR__ . '/../core/layout/header.php';
 ?>
 
-<div class="mb-4 mt-2 border-bottom pb-3">
-    <h3 class="fw-bold text-dark"><i class="bi bi-inbox-fill text-primary me-2"></i> Pedidos de Cota Extra</h3>
+<div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
+    <div>
+        <h3 class="fw-bold text-dark mb-0"><i class="bi bi-inbox-fill text-primary me-2"></i> Pedidos de Cota Extra</h3>
+        <p class="text-muted mb-0 small">Analise as justificativas e aprove cotas adicionais para os utilizadores.</p>
+    </div>
+    <div>
+        <a href="<?php echo $BASE_URL; ?>/admin/dashboard" class="btn btn-outline-secondary shadow-sm fw-bold">
+            <i class="bi bi-arrow-left me-1"></i> Voltar
+        </a>
+    </div>
 </div>
 
 <?php if ($msg != ""): ?>
-    <div class='alert alert-<?php echo $tipo_msg; ?> shadow-sm animate__animated animate__fadeIn'>
+    <div class='alert alert-<?php echo $tipo_msg; ?> shadow-sm border-0 animate__animated animate__fadeIn'>
         <i class='bi bi-info-circle-fill me-2'></i> <?php echo $msg; ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php endif; ?>
 
@@ -136,24 +159,23 @@ include '../core/layout/header.php';
                 ?>
                         <tr>
                             <td class='ps-4 text-muted small'><?php echo $p['data_br']; ?></td>
-                            <td class='fw-bold text-dark'><i class='bi bi-person me-1'></i><?php echo $p['usuario']; ?></td>
+                            <td class='fw-bold text-dark'><i class='bi bi-person text-secondary me-1'></i><?php echo htmlspecialchars($p['usuario']); ?></td>
                             <td><?php echo htmlspecialchars($p['motivo']); ?></td>
-                            <td class='text-center'><span class='badge bg-dark'>+<?php echo $p['paginas']; ?></span></td>
+                            <td class='text-center'><span class='badge bg-dark px-3 rounded-pill'>+<?php echo $p['paginas']; ?></span></td>
                             <td class='text-center pe-4'>
-                                <form method='post' class='d-flex justify-content-center gap-2 m-0'>
+                                <!-- ACTION apontada para a rota limpa, garantindo que o formulário submete para o lugar certo -->
+                                <form action="<?php echo $BASE_URL; ?>/admin/solicitacoes" method='post' class='d-flex justify-content-center gap-2 m-0'>
 
-                                    <!-- AQUI ESTÁ A CORREÇÃO: Token CSRF gerado corretamente pelo PHP -->
-                                    <input type='hidden' name='csrf_token' value='<?php echo gerar_csrf_token(); ?>'>
-
+                                    <input type='hidden' name='csrf_token' value='<?php echo $_SESSION['csrf_token']; ?>'>
                                     <input type='hidden' name='id_solicitacao' value='<?php echo $p['id']; ?>'>
 
-                                    <button type='submit' name='acao' value='aprovar' class='btn btn-success btn-sm fw-bold'
-                                        onclick='return confirm("Aprovar estas páginas?")'>
-                                        <i class='bi bi-check-lg'></i> Aprovar
+                                    <button type='submit' name='acao' value='aprovar' class='btn btn-success btn-sm fw-bold shadow-sm'
+                                        onclick='return confirm("Aprovar a injeção destas páginas na conta do utilizador?")'>
+                                        <i class='bi bi-check-lg me-1'></i> Aprovar
                                     </button>
 
-                                    <button type='submit' name='acao' value='negar' class='btn btn-danger btn-sm'
-                                        onclick='return confirm("Negar pedido?")'>
+                                    <button type='submit' name='acao' value='negar' class='btn btn-danger btn-sm shadow-sm'
+                                        title="Negar Pedido" onclick='return confirm("Deseja negar este pedido?")'>
                                         <i class='bi bi-x-lg'></i>
                                     </button>
                                 </form>
@@ -164,7 +186,10 @@ include '../core/layout/header.php';
                 else:
                     ?>
                     <tr>
-                        <td colspan='5' class='text-center py-5 text-muted'>Não há pedidos pendentes.</td>
+                        <td colspan='5' class='text-center py-5 text-muted'>
+                            <i class="bi bi-check-circle text-success fs-1 d-block mb-3"></i>
+                            Tudo limpo! Não há pedidos pendentes no momento.
+                        </td>
                     </tr>
                 <?php endif; ?>
             </tbody>
@@ -172,4 +197,4 @@ include '../core/layout/header.php';
     </div>
 </div>
 
-<?php include '../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../core/layout/footer.php'; ?>

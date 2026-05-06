@@ -1,0 +1,14 @@
+RewriteEngine On
+
+# Informa o Apache de que a base do sistema é a pasta gg
+RewriteBase /gg/
+
+# Evita que o Apache procure a sua própria página de erro
+ErrorDocument 404 /gg/index.php
+
+# Ignora ficheiros que existam fisicamente (CSS, JS, Imagens)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Envia tudo o resto para o nosso roteador
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]

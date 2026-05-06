@@ -1,17 +1,32 @@
 <?php
 
 /**
- * IBQUOTA 3 - GERENCIADOR DE FILA DE IMPRESSÃO COLORIDA
+ * IFQUOTA - GERENCIADOR DE FILA DE IMPRESSÃO COLORIDA
  * Aprovação NTI (Até 500 págs) / Direção (Acima de 500)
  */
-// 1. Caminhos corrigidos para voltar duas pastas (../../)
-include_once '../core/db.php';
-include_once '../core/functions.php';
-sec_session_start();
 
-// 2. Proteção da página atualizada: Admins (2) e Diretores (3)
+// 1. INCLUDES BLINDADOS
+include_once __DIR__ . '/../core/db.php';
+include_once __DIR__ . '/../core/functions.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    sec_session_start();
+}
+
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
+
+// Garante que o Token CSRF existe na sessão antes de carregar a página
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// 2. Proteção da página: Admins (2) e Diretores (3)
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || ($_SESSION['permissao'] != 2 && $_SESSION['permissao'] != 3)) {
-    header("Location: ../public/login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
@@ -37,12 +52,7 @@ if (isset($_GET['view'])) {
 
     if ($stmt_v->fetch()) {
         // O caminho correto saindo do 'admin/' e entrando no 'public/'
-        $caminho_real = "../public/" . $path;
-
-        // Tenta na raiz caso o PHP tenha criado a pasta um nível antes
-        if (!file_exists($caminho_real)) {
-            $caminho_real = "../" . $path;
-        }
+        $caminho_real = __DIR__ . "/../public/" . $path;
 
         if (file_exists($caminho_real)) {
             header('Content-Type: application/pdf');
@@ -60,22 +70,19 @@ if (isset($_GET['view'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'], $_POST['id_pedido'])) {
     $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
     validar_csrf_token($token_recebido);
-    
+
     $id_pedido = (int)$_POST['id_pedido'];
     $acao = $_POST['acao'];
 
-    // Busca dados do pedido (Agora incluindo paginas_especificas)
+    // Busca dados do pedido
     $stmt_ped = $mysqli->prepare("SELECT usuario, arquivo_nome, arquivo_caminho, paginas, paginas_especificas, copias, impressora FROM pedidos_coloridos WHERE id = ? AND status = 'Pendente'");
     $stmt_ped->bind_param('i', $id_pedido);
     $stmt_ped->execute();
     $res_ped = $stmt_ped->get_result();
 
     if ($row = $res_ped->fetch_assoc()) {
-        // O caminho correto saindo do 'admin/' e entrando no 'public/'
-        $caminho_real = "../public/" . $row['arquivo_caminho'];
-        if (!file_exists($caminho_real)) {
-            $caminho_real = "../" . $row['arquivo_caminho'];
-        }
+
+        $caminho_real = __DIR__ . "/../public/" . $row['arquivo_caminho'];
 
         $total_paginas_pedido = $row['paginas'] * $row['copias'];
 
@@ -145,8 +152,7 @@ $cor_barra = 'bg-success';
 if ($percentual_uso > 75) $cor_barra = 'bg-warning';
 if ($percentual_uso >= 100) $cor_barra = 'bg-danger';
 
-// 4. Caminho do Header corrigido
-include '../core/layout/header.php';
+include __DIR__ . '/../core/layout/header.php';
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
@@ -154,7 +160,7 @@ include '../core/layout/header.php';
         <h3 class="fw-bold text-dark mb-0"><i class="bi bi-palette-fill text-danger me-2"></i> Retenção de Coloridas</h3>
         <p class="text-muted mb-0 small">Fila de aprovação de documentos coloridos</p>
     </div>
-    <a href="index.php" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
+    <a href="<?php echo $BASE_URL; ?>/admin/dashboard" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
 </div>
 
 <?php if ($msg != "") { ?>
@@ -237,10 +243,15 @@ include '../core/layout/header.php';
                             echo "<td class='text-center'>";
                             echo "<div class='d-flex justify-content-center gap-2'>";
 
-                            // Se o nome deste arquivo mudar, lembre-se de mudar aqui também:
-                            echo "<a href='gerenciar_coloridas.php?view={$p['id']}' target='_blank' class='btn btn-sm btn-outline-primary' title='Ler PDF'><i class='bi bi-eye'></i></a>";
+                            // ROTA LIMPA NO VISUALIZADOR
+                            echo "<a href='{$BASE_URL}/admin/coloridas?view={$p['id']}' target='_blank' class='btn btn-sm btn-outline-primary' title='Ler PDF'><i class='bi bi-eye'></i></a>";
 
-                            echo "<form action='gerenciar_coloridas.php' method='post' class='m-0 d-flex gap-2'>";
+                            // ROTA LIMPA NO FORM ACTION
+                            echo "<form action='{$BASE_URL}/admin/coloridas' method='post' class='m-0 d-flex gap-2'>";
+
+                            $token_seguro = htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8');
+                            echo "<input type='hidden' name='csrf_token' value='{$token_seguro}'>";
+
                             echo "<input type='hidden' name='id_pedido' value='{$p['id']}'>";
                             echo "<button type='submit' name='acao' value='aprovar' class='btn btn-sm btn-success fw-bold' {$bloquear_botao} onclick='return confirm(\"Aprovar a impressão deste documento?\")'><i class='bi bi-check-circle me-1'></i>Aprovar</button>";
                             echo "<button type='submit' name='acao' value='rejeitar' class='btn btn-sm btn-danger' title='Negar pedido' onclick='return confirm(\"Rejeitar e apagar este arquivo?\")'><i class='bi bi-x-circle'></i></button>";
@@ -256,7 +267,4 @@ include '../core/layout/header.php';
     </div>
 </div>
 
-<?php
-// 5. Caminho do Footer corrigido
-include '../core/layout/footer.php';
-?>
+<?php include __DIR__ . '/../core/layout/footer.php'; ?>

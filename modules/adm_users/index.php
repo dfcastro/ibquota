@@ -4,18 +4,20 @@
  * IBQUOTA 3 - GG (Gerenciador Gráfico)
  * Lista Usuários Administrativos (Atualizado)
  */
-include_once '../../core/db.php';
-include_once '../../core/functions.php';
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
 
-sec_session_start();
+if (session_status() === PHP_SESSION_NONE) {
+  sec_session_start();
+}
 
 // Proteção: Apenas Admin (Nível 2) acessa a gestão de acessos
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
-  header("Location: ../../public/login.php");
+  header("Location: /gg/login");
   exit();
 }
 
-include '../../core/layout/header.php';
+include __DIR__ . '/../../core/layout/header.php';
 
 // PAGINAÇÃO
 if (!defined('QTDE_POR_PAGINA')) define('QTDE_POR_PAGINA', 20);
@@ -112,8 +114,11 @@ if (isset($_GET['msg'])) {
                     <small class="text-muted"><?php echo htmlspecialchars($email); ?></small>
                   </td>
                   <td class="text-end pe-4">
-                    <a href="adm_users_editar.php?cod_adm_users=<?php echo $cod_adm_users; ?>" class="btn btn-outline-primary btn-sm" title="Editar"><i class="bi bi-pencil-square"></i></a>
-                    <a href="adm_users_excluir.php?cod_adm_users=<?php echo $cod_adm_users; ?>" class="btn btn-outline-danger btn-sm ms-1" title="Excluir" onclick="return confirm('ATENÇÃO: Deseja realmente excluir este administrador? Ele perderá acesso ao painel imediatamente.');"><i class="bi bi-trash3"></i></a>
+                    <!-- CÓDIGO NOVO (CORRETO E BLINDADO) -->
+                    <!-- CÓDIGO NOVO (CORRETO E BLINDADO) -->
+                    <a href="<?php echo $BASE_URL; ?>/admin/usuarios/editar?cod_adm_users=<?php echo $cod_adm_users; ?>" class="btn btn-outline-primary btn-sm shadow-sm" title="Editar"><i class="bi bi-pencil-square"></i></a>
+
+                    <a href="<?php echo $BASE_URL; ?>/admin/usuarios/excluir?cod_adm_users=<?php echo $cod_adm_users; ?>" class="btn btn-outline-danger btn-sm ms-1 shadow-sm" title="Excluir" onclick="return confirm('ATENÇÃO: Deseja realmente excluir este administrador? Ele perderá acesso ao painel imediatamente.');"><i class="bi bi-trash3"></i></a>
                   </td>
                 </tr>
               <?php } ?>
@@ -131,7 +136,7 @@ if (isset($_GET['msg'])) {
     <div class="card shadow-sm border-0 border-top border-success border-3">
       <div class="card-header bg-white fw-bold py-3"><i class="bi bi-person-plus-fill text-success me-2"></i>Novo Acesso</div>
       <div class="card-body bg-light">
-        <form action="adm_users_add.php" method="post">
+        <form action="<?php echo $BASE_URL; ?>/admin/usuarios/add" method="post">
           <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
           <div class="mb-3">
             <label class="form-label fw-bold small text-muted">Login de Acesso</label>
@@ -165,4 +170,4 @@ if (isset($_GET['msg'])) {
   </div>
 </div>
 
-<?php include '../../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../../core/layout/footer.php'; ?>

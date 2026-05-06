@@ -12,33 +12,40 @@ include_once 'db.php';
 /** Quantidades de registro por pagina - PAGINACAO **/
 define('QTDE_POR_PAGINA', 20);
 
-function sec_session_start()
-{
-    $session_name = 'sec_session_id';
-    $secure = false;    // Impede JavaScript de acessar identificacao da sessao. (Mudar para true se usar HTTPS)
-    $httponly = true;   // Forca sessao usar apenas cookies. 
 
-    if (ini_set('session.use_only_cookies', 1) === FALSE) {
-        header("Location: ../error.php?err=Could not initiate a safe session (ini_set)");
-        exit();
-    }
+// Abre o ficheiro core/functions.php e substitui a tua função sec_session_start por esta:
 
-    $cookieParams = session_get_cookie_params();
-    session_set_cookie_params(
-        $cookieParams["lifetime"],
-        $cookieParams["path"],
-        $cookieParams["domain"],
-        $secure,
-        $httponly
-    );
+function sec_session_start() {
+    $session_name = 'sec_session_id';   // Atribui um nome de sessão personalizado
+    $secure = false; // Em localhost (HTTP) deve ser false. Em Produção (HTTPS) muda para true.
+    $httponly = true; // Impede que o JavaScript aceda ao id da sessão (Proteção contra XSS)
 
-    session_name($session_name);
-
-    // Só inicia a sessão se ela ainda não estiver ativa
+    // 1. Verifica se a sessão já foi iniciada em algum outro lugar (ex: header.php ou db.php)
     if (session_status() === PHP_SESSION_NONE) {
+        
+        // 2. Tenta forçar o uso exclusivo de cookies para as sessões
+        if (ini_set('session.use_only_cookies', 1) === FALSE) {
+            // Em vez de redirecionar para um 'error.php' cego, mostramos o erro diretamente de forma elegante
+            http_response_code(500);
+            die("<div style='font-family: sans-serif; padding: 20px; color: #dc3545;'><b>Erro Crítico de Segurança:</b> Não foi possível iniciar uma sessão segura. Verifique as configurações (ini_set) do servidor PHP.</div>");
+        }
+
+        // 3. Configura os parâmetros do cookie de sessão
+        $cookieParams = session_get_cookie_params();
+        session_set_cookie_params([
+            'lifetime' => $cookieParams["lifetime"],
+            'path' => $cookieParams["path"],
+            'domain' => $cookieParams["domain"],
+            'secure' => $secure,
+            'httponly' => $httponly,
+            'samesite' => 'Lax' // Proteção extra moderna
+        ]);
+
+        // 4. Define o nome da sessão e inicia-a
+        session_name($session_name);
         session_start();
+        session_regenerate_id(true); // Previne ataques de "Session Fixation"
     }
-    // NOTA: session_regenerate_id() removido daqui para evitar perda de sessão. Movido para o login().
 }
 
 function login($login, $password, $mysqli)
