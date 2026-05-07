@@ -1,7 +1,7 @@
 <?php
 
 /**
- * IBQUOTA 3
+ * IFQUOTA 3
  * Cabecalho Refatorado - Navbar Superior (Bootstrap 5 + Rotas Inteligentes)
  */
 if (session_status() === PHP_SESSION_NONE) {
@@ -9,20 +9,12 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // ==========================================
-// DETEÇÃO INTELIGENTE DE AMBIENTE (DEV vs PRODUÇÃO)
+// DETEÇÃO INTELIGENTE DE AMBIENTE
 // ==========================================
 $host_atual = $_SERVER['HTTP_HOST'];
-
-if ($host_atual === 'localhost' || $host_atual === '127.0.0.1') {
-  // Ambiente Local (XAMPP/WAMP)
-  $BASE_URL = '/gg';
-} else {
-  // Servidor de Produção (impressao.almenara.ifnmg.edu.br)
-  $BASE_URL = '';
-}
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 // Segurança das Permissões do Menu
-// 0 = Comum/Relatórios | 1 = Admin Impressão | 2 = Admin Geral (NTI) | 3 = Diretor
 $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
 ?>
 <!DOCTYPE html>
@@ -43,18 +35,8 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
 
 <body>
 
-  <script>
-    // Inicia Datepicker se estiver nas telas de relatório
-    $(function() {
-      if (typeof $("#txtDataInicial").datepicker === "function") {
-        $("#txtDataInicial").datepicker();
-      }
-    });
-  </script>
-
   <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
     <div class="container-fluid">
-      <!-- Rota Base (O Roteador decide se vai para Painel ou Dashboard) -->
       <a class="navbar-brand fw-bold" href="<?php echo $BASE_URL; ?>/">🖨️ IFQuota</a>
 
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal">
@@ -69,14 +51,27 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
           </li>
 
           <?php if ($nivel > 0) { ?>
+            <!-- MENU: GESTÃO E CADASTROS -->
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-folder2-open"></i> Cadastros</a>
               <ul class="dropdown-menu shadow-sm">
-                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/contas"><i class="bi bi-people text-muted me-2"></i>Usuários</a></li>
+                <li class="dropdown-header small text-uppercase fw-bold">Utilizadores</li>
+                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/contas"><i class="bi bi-people text-muted me-2"></i>Contas da Rede</a></li>
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/grupos"><i class="bi bi-diagram-3 text-muted me-2"></i>Grupos</a></li>
+
+                <?php if ($nivel >= 2) { ?>
+                  <li>
+                    <hr class="dropdown-divider">
+                  </li>
+                  <li class="dropdown-header small text-uppercase fw-bold">Infraestrutura</li>
+                  <!-- NOVAS OPÇÕES ADICIONADAS AQUI -->
+                  <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/locais"><i class="bi bi-geo-alt text-muted me-2"></i>Locais/Setores</a></li>
+                  <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/impressoras"><i class="bi bi-printer-fill text-muted me-2"></i>Setup de Impressoras</a></li>
+                <?php } ?>
               </ul>
             </li>
 
+            <!-- MENU: RELATÓRIOS -->
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-bar-chart"></i> Relatórios</a>
               <ul class="dropdown-menu shadow-sm">
@@ -91,53 +86,49 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
           <?php } ?>
 
           <?php if ($nivel >= 2) { ?>
-
+            <!-- FILA COLORIDA E SOLICITAÇÕES (DESTAQUE) -->
             <li class="nav-item ms-lg-2 border-start border-light ps-lg-2">
-              <a class="nav-link text-warning fw-bold" href="<?php echo $BASE_URL; ?>/admin/coloridas" title="Gerenciar Impressões Retidas">
-                <i class="bi bi-palette-fill"></i> Fila Colorida
-              </a>
+              <a class="nav-link text-warning fw-bold" href="<?php echo $BASE_URL; ?>/admin/coloridas"><i class="bi bi-palette-fill"></i> Fila Colorida</a>
             </li>
 
-            <li class="nav-item ms-lg-2 border-start border-light ps-lg-2">
-              <a class="nav-link text-info fw-bold" href="<?php echo $BASE_URL; ?>/admin/solicitacoes" title="Gerenciar Pedidos de Cotas Extras">
-                <i class="bi bi-inbox-fill"></i> Pedidos de Cota
-              </a>
+            <li class="nav-item">
+              <a class="nav-link text-info fw-bold" href="<?php echo $BASE_URL; ?>/admin/solicitacoes"><i class="bi bi-inbox-fill"></i> Pedidos</a>
             </li>
 
+            <!-- MENU: CONFIGURAÇÕES DE SISTEMA -->
             <li class="nav-item dropdown ms-lg-2 border-start border-light ps-lg-2">
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-gear"></i> Sistema</a>
               <ul class="dropdown-menu shadow-sm">
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/configuracao"><i class="bi bi-sliders text-muted me-2"></i>Configurações Gerais</a></li>
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/politicas"><i class="bi bi-shield-check text-muted me-2"></i>Políticas de Impressão</a></li>
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/init-quotas"><i class="bi bi-arrow-clockwise text-muted me-2"></i>Inicializar Quotas</a></li>
-                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/usuarios"><i class="bi bi-person-badge text-muted me-2"></i>Usuários Administrativos</a></li>
-
-                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/auditoria"><i class="bi bi-shield-lock text-danger me-2"></i>Auditoria de Acessos</a></li>
-
                 <li>
                   <hr class="dropdown-divider">
                 </li>
-                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/teste-ldap"><i class="bi bi-hdd-network text-muted me-2"></i>Teste Conexão LDAP</a></li>
+                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/usuarios"><i class="bi bi-person-badge text-muted me-2"></i>Admins do Painel</a></li>
+                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/auditoria"><i class="bi bi-shield-lock text-danger me-2"></i>Auditoria de Acessos</a></li>
+                <li>
+                  <hr class="dropdown-divider">
+                </li>
+                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/teste-ldap"><i class="bi bi-hdd-network text-muted me-2"></i>Teste LDAP</a></li>
               </ul>
             </li>
+
             <li class="nav-item">
-              <a class="nav-link" href="<?php echo $BASE_URL; ?>/admin/documentacao">
-                <i class="bi bi-book text-muted me-2"></i> Manual do Sistema
-              </a>
+              <a class="nav-link" href="<?php echo $BASE_URL; ?>/admin/documentacao"><i class="bi bi-book text-muted me-2"></i> Manual</a>
             </li>
           <?php } ?>
 
         </ul>
 
         <ul class="navbar-nav ms-auto">
-
           <li class="nav-item me-3 d-none d-lg-flex align-items-center">
             <a href="<?php echo $BASE_URL; ?>/web-print" class="btn btn-sm btn-outline-light rounded-pill px-3"><i class="bi bi-cloud-arrow-up-fill me-1"></i> Web Print</a>
           </li>
 
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle text-white fw-bold" href="#" data-bs-toggle="dropdown">
-              <i class="bi bi-person-circle fs-5 align-middle me-1"></i> <?php echo isset($_SESSION['usuario']) ? $_SESSION['usuario'] : (isset($_SESSION['username']) ? $_SESSION['username'] : 'Conta'); ?>
+              <i class="bi bi-person-circle fs-5 align-middle me-1"></i> <?php echo isset($_SESSION['usuario']) ? $_SESSION['usuario'] : 'Conta'; ?>
             </a>
             <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2">
               <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/trocar-senha"><i class="bi bi-key text-muted me-2"></i> Trocar Senha</a></li>

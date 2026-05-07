@@ -77,7 +77,8 @@ $rotas = [
     'admin/relatorio'    => 'modules/relatorios/impressoes.php',
     'admin/logs'         => 'modules/relatorios/ibquota_logs.php',
     'admin/auditoria'    => 'admin/logs_acesso.php',
-    
+    'admin/status-impressoras'  => 'admin/status_impressoras.php',
+
     // Rotas de Configuração e Manutenção
     'admin/coloridas'    => 'admin/gerenciar_coloridas.php',
     'admin/solicitacoes' => 'admin/solicitacoes.php',
@@ -91,9 +92,12 @@ $rotas = [
     'admin/politicas/add'       => 'modules/politicas/politica_add.php',
     'admin/politicas/excluir'   => 'modules/politicas/politica_excluir.php',
     'admin/init-quotas'         => 'modules/politicas/init_quota_politica.php',
-    
+
     // Rotas do Módulo: Grupos
     'admin/grupos'            => 'modules/grupos/index.php',
+    'admin/grupos/add'        => 'modules/grupos/grupo_add.php',
+    'admin/grupos/editar'     => 'modules/grupos/grupo_editar.php',
+    'admin/grupos/excluir'    => 'modules/grupos/grupo_excluir.php',
 
     // Rotas do Módulo: Administradores do Painel (NTI/Direção)
     'admin/usuarios'         => 'modules/adm_users/index.php',
@@ -110,12 +114,18 @@ $rotas = [
     'admin/contas/gerenciar'   => 'modules/usuarios/usuario_gerenciar.php',
     'admin/contas/excluir'     => 'modules/usuarios/usuario_excluir.php',
 
-    // Rotas do Módulo: Grupos
-    'admin/grupos'            => 'modules/grupos/index.php',
-    'admin/grupos/add'        => 'modules/grupos/grupo_add.php',
-    'admin/grupos/editar'     => 'modules/grupos/grupo_editar.php',
-    'admin/grupos/excluir'    => 'modules/grupos/grupo_excluir.php',
-    
+
+    // Rotas do Módulo: Locais (Departamentos)
+    'admin/locais'         => 'modules/locais/index.php',
+    'admin/locais/add'     => 'modules/locais/local_add.php',
+    'admin/locais/editar'  => 'modules/locais/local_editar.php',
+    'admin/locais/excluir' => 'modules/locais/local_excluir.php',
+
+    // Rotas do Módulo: Impressoras (Vinculação de Hardware)
+    'admin/impressoras'         => 'modules/impressoras/index.php',
+    'admin/impressoras/add'     => 'modules/impressoras/impressora_add.php',
+    'admin/impressoras/editar'  => 'modules/impressoras/impressora_editar.php',
+    'admin/impressoras/excluir' => 'modules/impressoras/impressora_excluir.php',
 
 ];
 

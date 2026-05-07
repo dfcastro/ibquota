@@ -2,11 +2,9 @@
 
 /**
  * IBQUOTA 3 - WEB PRINT (Impressão sem Fios via CUPS)
- * Com Pré-visualização, Filtro Inteligente, UI Responsiva e Seleção Agrupada de Impressoras
- * ATUALIZADO: Rotas Limpas, CSRF e Caminhos Blindados
+ * 100% DINÂMICO: Lê locais e configurações de cor direto do Banco de Dados
  */
 
-// 1. INCLUDES BLINDADOS (Corrigido o /../)
 include_once __DIR__ . '/../core/db.php';
 include_once __DIR__ . '/../core/functions.php';
 
@@ -24,12 +22,10 @@ if ($host_atual === 'localhost' || $host_atual === '127.0.0.1') {
     $BASE_URL = ''; // Ambiente de Produção
 }
 
-// Garante que a sessão possui o Token CSRF
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// 2. Validação de Sessão Segura (Redireciona para a Rota Limpa)
 if (!isset($_SESSION['usuario'])) {
     header("Location: " . $BASE_URL . "/login");
     exit();
@@ -40,68 +36,49 @@ $msg = "";
 $tipo_msg = "";
 
 // ======================================================================
-// Dicionário de Locais das Impressoras Agrupado por Categorias
+// 1. BUSCA INTELIGENTE: IMPRESSORAS, LOCAIS E CONFIG DE COR
 // ======================================================================
-$locais_impressoras_agrupado = [
-    'Administração e TI' => [
-        'imp-adm-01'        => 'Prédio Administrativo',
-        'imp-color'         => 'NGTI (Colorida - Requer Aprovação)'
-    ],
-    'Pedagógico I (Salas e Secretaria)' => [
-        'imp-sec-01'        => 'Secretaria Pedagógico I',
-        'imp-prof-p1-01'    => 'Sala Professores Ped. I (Imp 01)',
-        'imp-prof-p1-02'    => 'Sala Professores Ped. I (Imp 02)',
-        'imp-prof-p1-03'    => 'Sala Professores Ped. I (Imp 03)',
-        'imp-nped-01'       => 'Núcleo Pedagógico',
-        'imp-caec-01'       => 'CAEC',
-        'imp-epe-01'       => 'Estágio/Pesquisa/Extensão'
-    ],
-    'Pedagógico II e Laboratórios' => [
-        'imp-prof-p2-01'    => 'Sala Professores Pedagógico II',
-        'imp-lab-solos-01'  => 'Prédio Lab Solos',
-
-    ],
-    'Apoio ao Aluno' => [
-        'imp-biblioteca-01' => 'Biblioteca',
-        'imp-napne'         => 'NAPNE'
-    ]
-];
-
-// Cria uma lista simples (plana) em memória apenas para exibir as mensagens de sucesso mais tarde
-$locais_impressoras_plano = [];
-foreach ($locais_impressoras_agrupado as $categoria => $impressoras) {
-    foreach ($impressoras as $id => $nome) {
-        $locais_impressoras_plano[$id] = $nome;
-    }
-}
-
-// 2. BUSCA AS IMPRESSORAS PERMITIDAS (DISTINCT PARA NÃO DUPLICAR)
 $query_impressoras = "
-    SELECT DISTINCT pi.impressora
+    SELECT DISTINCT 
+        pi.impressora, 
+        IFNULL(ic.is_colorida, 0) as is_colorida, 
+        IFNULL(l.nome_local, 'Sem Setor Definido') as categoria
     FROM usuarios u
     JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario
     JOIN grupos g ON gu.cod_grupo = g.cod_grupo
     JOIN politica_grupo pg ON g.grupo = pg.grupo
     JOIN politica_impressora pi ON pg.cod_politica = pi.cod_politica
+    LEFT JOIN impressoras_config ic ON pi.impressora = ic.nome_impressora
+    LEFT JOIN locais l ON ic.cod_local = l.cod_local
     WHERE u.usuario = ?
-    ORDER BY pi.impressora
+    ORDER BY categoria, pi.impressora
 ";
 
 $stmt_imp = $mysqli->prepare($query_impressoras);
 $stmt_imp->bind_param('s', $usuario_logado);
 $stmt_imp->execute();
 $result_imp = $stmt_imp->get_result();
+
 $impressoras_permitidas = [];
+$impressoras_agrupadas = [];
+$config_hardware = []; // Guarda se a impressora é colorida (1 ou 0)
 
 while ($row = $result_imp->fetch_assoc()) {
-    $impressoras_permitidas[] = $row['impressora'];
+    $nome_imp = $row['impressora'];
+    $categoria = $row['categoria'];
+
+    $impressoras_permitidas[] = $nome_imp;
+    $impressoras_agrupadas[$categoria][] = $row;
+    $config_hardware[$nome_imp] = (int)$row['is_colorida'];
 }
 $stmt_imp->close();
 
-// 3. PROCESSA O ENVIO DO ARQUIVO
+
+// ======================================================================
+// 2. PROCESSA O ENVIO DO ARQUIVO
+// ======================================================================
 if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
-    // A FECHADURA DE SEGURANÇA: Valida o Token CSRF antes de processar o PDF
     $token_recebido = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
     if (!hash_equals($_SESSION['csrf_token'], $token_recebido)) {
         die("Tentativa inválida de submissão do formulário (Erro CSRF).");
@@ -111,7 +88,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
     $copias = (int)$_POST['copias'];
     if ($copias < 1) $copias = 1;
 
-    // Captura as páginas e traduz intervalos (Ex: "1, 3-5" vira "1,3,4,5")
     $paginas_selecionadas_raw = trim($_POST['paginas_selecionadas']);
     $paginas_desejadas = [];
 
@@ -147,7 +123,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
     $ajustar = isset($_POST['ajustar_pagina']) ? "-o fit-to-page" : "";
 
-    // Validações
     if (!in_array($impressora_escolhida, $impressoras_permitidas)) {
         $msg = "Acesso negado a esta impressora.";
         $tipo_msg = "danger";
@@ -169,11 +144,13 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             $tipo_msg = "warning";
         } else {
 
-            // ==========================================
-            // DESVIO 1: IMPRESSÃO COLORIDA (RAIO-X + FILA/AUTO)
-            // ==========================================
-            if ($impressora_escolhida == 'imp-color') {
+            // A MÁGICA ACONTECE AQUI: Lemos do banco se a impressora escolhida é colorida
+            $eh_colorida = isset($config_hardware[$impressora_escolhida]) && $config_hardware[$impressora_escolhida] === 1;
 
+            if ($eh_colorida) {
+                // ==========================================
+                // IMPRESSÃO COLORIDA (RAIO-X + FILA/AUTO)
+                // ==========================================
                 $nome_limpo = preg_replace('/[^a-zA-Z0-9.\-_]/', '_', $nome_original);
                 $novo_nome = "REQ_" . time() . "_" . $nome_limpo;
                 $destino_final = __DIR__ . "/../uploads/coloridas/" . $novo_nome;
@@ -227,11 +204,9 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                         $total_mes = $res_cota->fetch_assoc()['total'] ?? 0;
                         $consumo_previsto = $total_mes + $total_folhas_novas;
 
-                        // Caminho relativo para a Base de Dados (public/uploads)
                         $caminho_bd = "uploads/coloridas/" . $novo_nome;
 
                         if ($auto_aprovar == 1 && $consumo_previsto <= 500) {
-
                             $stmt_ped = $mysqli->prepare("INSERT INTO pedidos_coloridos (usuario, arquivo_nome, arquivo_caminho, paginas, paginas_especificas, copias, impressora, status, aprovado_por) VALUES (?, ?, ?, ?, ?, ?, ?, 'Aprovado', 'Sistema Automático')");
                             $stmt_ped->bind_param('sssisis', $usuario_logado, $nome_original, $caminho_bd, $qtd_final, $string_paginas_finais, $copias, $impressora_escolhida);
                             $stmt_ped->execute();
@@ -273,11 +248,10 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                     $msg = "Erro ao salvar o arquivo.";
                     $tipo_msg = "danger";
                 }
-
-                // ==========================================
-                // DESVIO 2: IMPRESSÃO MONOCROMÁTICA (DIRETO PARA CUPS)
-                // ==========================================
             } else {
+                // ==========================================
+                // IMPRESSÃO MONOCROMÁTICA (DIRETO PARA CUPS)
+                // ==========================================
                 $comando_ranges = !empty($paginas_selecionadas) ? "-o page-ranges=" . escapeshellarg($paginas_selecionadas) : "";
 
                 $cmd_impressora = escapeshellarg($impressora_escolhida);
@@ -290,8 +264,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                 $saida_shell = shell_exec($comando);
 
                 if (strpos(strtolower($saida_shell), 'request id is') !== false || strpos(strtolower($saida_shell), 'id da requisição') !== false) {
-                    $nome_amigavel_sucesso = isset($locais_impressoras_plano[$impressora_escolhida]) ? $locais_impressoras_plano[$impressora_escolhida] : $impressora_escolhida;
-                    $msg = "Arquivo enviado com sucesso para a impressora <b>{$nome_amigavel_sucesso}</b>!";
+                    $msg = "Arquivo enviado com sucesso para a impressora <b>{$impressora_escolhida}</b>!";
                     $tipo_msg = "success";
                 } else {
                     $msg = "Erro ao processar no servidor CUPS: <br><small>" . htmlspecialchars($saida_shell) . "</small>";
@@ -441,9 +414,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="acao" value="enviar_impressao">
 
-                        <!-- ÁREA DE UPLOAD MELHORADA -->
                         <div class="mb-4 text-center" id="upload-wrapper">
-                            <!-- Estado 1: Aguardando Ficheiro -->
                             <label for="arquivo_pdf" class="w-100 cursor-pointer" id="label-upload">
                                 <div class="upload-area cursor-pointer">
                                     <i class="bi bi-file-earmark-pdf text-danger" style="font-size: 3rem;"></i>
@@ -453,7 +424,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                             </label>
                             <input class="form-control d-none" type="file" id="arquivo_pdf" name="arquivo_pdf" accept=".pdf" required>
 
-                            <!-- Estado 2: Ficheiro Selecionado -->
                             <div id="file-info-box" class="d-none upload-area bg-white border-success">
                                 <i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>
                                 <h5 class="fw-bold mt-2 text-success doc-nome-responsivo mx-auto d-block text-truncate" id="nome-arquivo-selecionado">arquivo.pdf</h5>
@@ -463,7 +433,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                             </div>
                         </div>
 
-                        <!-- SECÇÃO DE PRÉ-VISUALIZAÇÃO COM GRELHA RESPONSIVA -->
                         <div id="preview-section" class="d-none mb-4 p-3 bg-white border rounded shadow-sm">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="fw-bold text-dark mb-0"><i class="bi bi-images text-primary me-2"></i> Selecione as Páginas</h5>
@@ -473,10 +442,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                                 </div>
                             </div>
 
-                            <!-- Grelha responsiva -->
-                            <div id="pdf-preview-container" class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3 mb-4">
-                            </div>
-
+                            <div id="pdf-preview-container" class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3 mb-4"></div>
                             <hr>
 
                             <label class="form-label fw-bold text-dark"><i class="bi bi-input-cursor-text me-1"></i> Digitar Páginas Específicas</label>
@@ -484,35 +450,19 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                             <div class="form-text text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Pode clicar nas miniaturas acima ou digitar manualmente os intervalos. Ex: 1, 3, 5-10</div>
                         </div>
 
-                        <!-- CONFIGURAÇÕES DE IMPRESSÃO (NOVO OPTGROUP) -->
                         <div class="row bg-light p-3 rounded mb-3 mx-1 shadow-sm">
                             <div class="col-md-9 mb-3 mb-md-0">
                                 <label class="form-label fw-bold"><i class="bi bi-printer me-1"></i> Impressora Destino</label>
                                 <select class="form-select border-success" name="impressora" required>
                                     <option value="" disabled selected>Escolha o local...</option>
                                     <?php
-                                    foreach ($locais_impressoras_agrupado as $categoria => $impressoras) {
-                                        $imprimir_categoria = false;
-                                        $opcoes_html = "";
-
-                                        foreach ($impressoras as $imp_id => $nome_amigavel) {
-                                            if (in_array($imp_id, $impressoras_permitidas)) {
-                                                $imprimir_categoria = true;
-                                                $opcoes_html .= "<option value=\"" . htmlspecialchars($imp_id) . "\">" . htmlspecialchars($nome_amigavel) . " (" . htmlspecialchars($imp_id) . ")</option>";
-                                            }
+                                    foreach ($impressoras_agrupadas as $categoria => $impressoras) {
+                                        echo "<optgroup label=\"" . htmlspecialchars($categoria) . "\">";
+                                        foreach ($impressoras as $imp) {
+                                            $icone = ($imp['is_colorida'] == 1) ? ' 🎨 (Colorida)' : '';
+                                            echo "<option value=\"" . htmlspecialchars($imp['impressora']) . "\">" . htmlspecialchars($imp['impressora']) . $icone . "</option>";
                                         }
-
-                                        if ($imprimir_categoria) {
-                                            echo "<optgroup label=\"" . htmlspecialchars($categoria) . "\">";
-                                            echo $opcoes_html;
-                                            echo "</optgroup>";
-                                        }
-                                    }
-
-                                    foreach ($impressoras_permitidas as $imp_id) {
-                                        if (!array_key_exists($imp_id, $locais_impressoras_plano)) {
-                                            echo "<option value=\"" . htmlspecialchars($imp_id) . "\">Impressora Desconhecida (" . htmlspecialchars($imp_id) . ")</option>";
-                                        }
+                                        echo "</optgroup>";
                                     }
                                     ?>
                                 </select>
@@ -548,7 +498,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                         </div>
 
                         <div class="alert alert-warning small py-2 mt-2">
-                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Documentos enviados para a <b>Colorida</b> serão analisados. Apenas as páginas que contém cores vão para aprovação.
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Documentos enviados para as impressoras <b>Coloridas</b> serão analisados. Apenas as páginas que contém cores vão para aprovação.
                         </div>
 
                         <div class="card shadow-sm border-0 mb-3 d-none" id="card-tracking">
@@ -569,13 +519,13 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             </div>
         </div>
     </div>
+
     <?php include __DIR__ . '/../core/layout/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
         let selectedPages = new Set();
 
-        // 1. CARREGAMENTO DO FICHEIRO PDF
         document.getElementById('arquivo_pdf').addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file || file.type !== 'application/pdf') return;
@@ -659,7 +609,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             }
         });
 
-        // 2. FUNÇÃO PARA REMOVER O FICHEIRO
         function removerArquivo() {
             document.getElementById('arquivo_pdf').value = '';
             document.getElementById('label-upload').classList.remove('d-none');
@@ -671,7 +620,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             document.getElementById('btn-submit').disabled = false;
         }
 
-        // 3. FUNÇÕES DE SELEÇÃO
         function selecionarTodas(selecionar) {
             const thumbnails = document.querySelectorAll('.page-thumbnail');
             thumbnails.forEach(thumb => {
@@ -693,7 +641,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             document.getElementById('btn-submit').disabled = (arrayPaginas.length === 0);
         }
 
-        // 4. SINCRONIZA TEXTO ESCRITO COM AS MINIATURAS
         document.getElementById('paginas_selecionadas').addEventListener('input', function() {
             selectedPages.clear();
             const partes = this.value.split(',');
@@ -725,15 +672,11 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             document.getElementById('btn-submit').disabled = (this.value.trim() !== '' && selectedPages.size === 0);
         });
 
-        // =====================================
-        // RASTREADOR DE TEMPO REAL (AJAX CORRIGIDO)
-        // =====================================
         const msgSuccess = document.querySelector('.alert-success');
         if (msgSuccess) {
             document.getElementById('card-tracking').classList.remove('d-none');
 
             function trackLatestJob() {
-                // Rota corrigida para a URL Base dinâmica
                 fetch('<?php echo $BASE_URL; ?>/public/ajax_status.php')
                     .then(response => response.json())
                     .then(data => {
