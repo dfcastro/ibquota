@@ -1,3 +1,14 @@
+# ==========================================
+# 1. SEGURANÇA (Bloqueio de ficheiros sensíveis)
+# ==========================================
+<Files .env>
+    Order allow,deny
+    Deny from all
+</Files>
+
+# ==========================================
+# 2. ROTEAMENTO DE URLS AMIGÁVEIS
+# ==========================================
 RewriteEngine On
 
 # Informa o Apache de que a base do sistema é a pasta gg
