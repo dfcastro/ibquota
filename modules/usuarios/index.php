@@ -2,7 +2,7 @@
 
 /**
  * IFQUOTA - Gestão de Contas da Rede
- * Lista Usuários - Filtro "Sem Grupo" e Paginação Inteligente Corrigida
+ * Lista Usuários - Filtro "Sem Grupo", "Pendentes de Cota" e Paginação Inteligente
  */
 include_once __DIR__ . '/../../core/db.php';
 include_once __DIR__ . '/../../core/functions.php';
@@ -27,7 +27,7 @@ include __DIR__ . '/../../core/layout/header.php';
 $q = isset($_GET['q']) ? trim($_GET['q']) : '';
 $like_q = "%" . $q . "%";
 
-// 0 = Todos, -1 = Sem Grupo, > 0 = ID Específico
+// 0 = Todos, -1 = Sem Grupo, -2 = Pendente de Cota, > 0 = ID Específico
 $filtro_grupo = (isset($_GET['grupo']) && $_GET['grupo'] != '') ? (int)$_GET['grupo'] : 0;
 
 $p = (isset($_GET['p'])) ? (int)$_GET['p'] : 1;
@@ -52,6 +52,23 @@ if ($filtro_grupo == -1 && $q != '') {
   $num_stmt = $mysqli->prepare($sql_count);
 
   $sql_data = "SELECT DISTINCT u.cod_usuario, u.usuario FROM usuarios u LEFT JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario WHERE gu.cod_grupo IS NULL ORDER BY u.usuario LIMIT ?, ?";
+  $stmt = $mysqli->prepare($sql_data);
+  $stmt->bind_param('ii', $p_inicio, $p_qtde_por_pagina);
+} elseif ($filtro_grupo == -2 && $q != '') {
+  // Busca APENAS "Pendentes de Cota" (Têm grupo, mas não têm cota) com busca por nome
+  $sql_count = "SELECT count(DISTINCT u.cod_usuario) FROM usuarios u JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario LEFT JOIN quota_usuario qu ON u.usuario = qu.usuario WHERE qu.usuario IS NULL AND u.usuario LIKE ?";
+  $num_stmt = $mysqli->prepare($sql_count);
+  $num_stmt->bind_param('s', $like_q);
+
+  $sql_data = "SELECT DISTINCT u.cod_usuario, u.usuario FROM usuarios u JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario LEFT JOIN quota_usuario qu ON u.usuario = qu.usuario WHERE qu.usuario IS NULL AND u.usuario LIKE ? ORDER BY u.usuario LIMIT ?, ?";
+  $stmt = $mysqli->prepare($sql_data);
+  $stmt->bind_param('sii', $like_q, $p_inicio, $p_qtde_por_pagina);
+} elseif ($filtro_grupo == -2) {
+  // Busca APENAS "Pendentes de Cota"
+  $sql_count = "SELECT count(DISTINCT u.cod_usuario) FROM usuarios u JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario LEFT JOIN quota_usuario qu ON u.usuario = qu.usuario WHERE qu.usuario IS NULL";
+  $num_stmt = $mysqli->prepare($sql_count);
+
+  $sql_data = "SELECT DISTINCT u.cod_usuario, u.usuario FROM usuarios u JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario LEFT JOIN quota_usuario qu ON u.usuario = qu.usuario WHERE qu.usuario IS NULL ORDER BY u.usuario LIMIT ?, ?";
   $stmt = $mysqli->prepare($sql_data);
   $stmt->bind_param('ii', $p_inicio, $p_qtde_por_pagina);
 } elseif ($filtro_grupo > 0 && $q != '') {
@@ -106,7 +123,8 @@ $res_grupos_lista = $mysqli->query("SELECT cod_grupo, grupo FROM grupos ORDER BY
 while ($g = $res_grupos_lista->fetch_assoc()) {
   $todos_os_grupos[] = $g;
 }
-// ===  BUSCA AS REGRAS DE MAPEAMENTO PARA O MODAL ===
+
+// === BUSCA AS REGRAS DE MAPEAMENTO PARA O MODAL ===
 $mapeamentos_cadastrados = [];
 $res_map = $mysqli->query("SELECT m.id, m.ou_ad, m.cargo_ad, g.grupo FROM mapeamento_ad m JOIN grupos g ON m.cod_grupo = g.cod_grupo ORDER BY m.ou_ad, m.cargo_ad");
 if ($res_map) {
@@ -142,7 +160,7 @@ if (isset($_GET['msg'])) {
     'erro_existe' => 'Atenção: Este login de rede já está cadastrado no sistema!',
     'edit' => 'Dados do usuário atualizados com sucesso!',
     'del' => 'Usuário e suas cotas foram excluídos do sistema.',
-    'lote_ok' => 'Contas movidas com sucesso para o novo grupo!',
+    'lote_ok' => 'Contas movidas e saldos atualizados com sucesso!',
     'lote_vazio' => 'Atenção: Nenhum utilizador ou grupo foi selecionado.'
   ];
 
@@ -187,6 +205,7 @@ if (isset($_GET['msg'])) {
         <select class="form-select border-primary" name="grupo">
           <option value="0">-- Todos os Grupos --</option>
           <option value="-1" <?php echo ($filtro_grupo == -1) ? 'selected' : ''; ?>>❌ Sem Grupo (Aguardando Ação)</option>
+          <option value="-2" <?php echo ($filtro_grupo == -2) ? 'selected' : ''; ?>>⚠️ Pendentes de Cota (No Grupo)</option>
           <?php
           foreach ($todos_os_grupos as $g) {
             $selecionado = ($filtro_grupo == $g['cod_grupo']) ? 'selected' : '';
@@ -225,7 +244,7 @@ if (isset($_GET['msg'])) {
           }
           ?>
         </select>
-        <button type="submit" class="btn btn-primary fw-bold shadow-sm text-nowrap" onclick="return confirm('ATENÇÃO: Deseja mover todos os utilizadores selecionados para o novo grupo?');">
+        <button type="submit" class="btn btn-primary fw-bold shadow-sm text-nowrap" onclick="return confirm('ATENÇÃO: Deseja mover todos os utilizadores selecionados para o novo grupo? (Eles receberão a cota na hora)');">
           <i class="bi bi-arrow-right-circle me-1"></i> Aplicar
         </button>
       </div>
@@ -253,7 +272,9 @@ if (isset($_GET['msg'])) {
 
               echo "<td>";
               $res_grupos = $mysqli->query("SELECT g.grupo FROM grupo_usuario gu JOIN grupos g ON g.cod_grupo = gu.cod_grupo WHERE gu.cod_usuario = $cod_usuario");
+              $tem_algum_grupo = false;
               if ($res_grupos->num_rows > 0) {
+                $tem_algum_grupo = true;
                 while ($g = $res_grupos->fetch_assoc()) {
                   echo "<span class='badge bg-secondary bg-opacity-10 text-secondary border border-secondary-subtle me-1 fw-normal'><i class='bi bi-diagram-3 me-1'></i>{$g['grupo']}</span>";
                 }
@@ -263,9 +284,11 @@ if (isset($_GET['msg'])) {
               echo "</td>";
 
               echo "<td>";
+              // Busca as quotas do usuário
               $res_quota = $mysqli->query("SELECT qu.quota, p.quota_infinita, p.nome FROM quota_usuario qu JOIN politicas p ON p.cod_politica = qu.cod_politica WHERE qu.usuario = '$usuario_safe'");
 
               if ($res_quota->num_rows > 0) {
+                // Tem cota oficial registada
                 while ($q_data = $res_quota->fetch_assoc()) {
                   if ($q_data['quota_infinita'] == 1) {
                     echo "<span class='badge text-bg-success shadow-sm' title='Política: {$q_data['nome']}'><i class='bi bi-infinity'></i> Ilimitada</span><br>";
@@ -276,7 +299,14 @@ if (isset($_GET['msg'])) {
                   }
                 }
               } else {
-                echo "<span class='text-muted small'><i class='bi bi-hourglass-split'></i> Aguardando Uso</span>";
+                // NÃO tem cota. Porquê?
+                if ($tem_algum_grupo) {
+                  echo "<span class='text-warning small fw-bold'><i class='bi bi-hourglass-split'></i> Pendente de Saldo</span><br>";
+                  echo "<small class='text-muted' style='font-size:0.7rem'>Aguardando Injeção ou Impressão</small>";
+                } else {
+                  echo "<span class='text-danger small fw-bold'><i class='bi bi-slash-circle'></i> Sem Acesso</span><br>";
+                  echo "<small class='text-muted' style='font-size:0.7rem'>Vincule a um grupo</small>";
+                }
               }
               echo "</td>";
 
@@ -316,7 +346,7 @@ if (isset($_GET['msg'])) {
     $prev_link = ($p > 1) ? "{$BASE_URL}/admin/contas?p=" . ($p - 1) . $qs_str : '#';
     echo "<li class='page-item {$prev_disabled}'><a class='page-link text-success' href='{$prev_link}'>Anterior</a></li>";
 
-    // Números das Páginas (Mostra no máximo 5 páginas para não esticar demais)
+    // Números das Páginas
     $inicio_pag = max(1, $p - 2);
     $fim_pag = min($total_paginas, $p + 2);
 
@@ -386,6 +416,7 @@ if (isset($_GET['msg'])) {
     </div>
   </div>
 </div>
+
 <div class="modal fade" id="modalMapeamentoAD" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content border-0 shadow-lg">
@@ -463,36 +494,33 @@ if (isset($_GET['msg'])) {
     </div>
   </div>
 </div>
+
 <div class="modal fade" id="modalSyncAD" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg">
-
       <div class="modal-header bg-primary text-white">
         <h5 class="modal-title fw-bold"><i class="bi bi-arrow-repeat me-2"></i>Sincronizar Active Directory</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-
       <div class="modal-body p-4 bg-light text-center">
         <i class="bi bi-cloud-download text-primary mb-3" style="font-size: 4rem;"></i>
         <h4 class="fw-bold text-dark">Iniciar Varredura?</h4>
         <p class="text-muted mb-4">O sistema irá importar as contas ativas do AD que ainda não existem no IFQUOTA.</p>
-
         <div class="alert alert-warning shadow-sm border-0 text-start small mb-0">
           <i class="bi bi-exclamation-triangle-fill me-1"></i> <strong>DICA IMPORTANTE:</strong><br>
           Já configurou as regras em <b>Regras do AD</b>? Se não, feche esta janela e crie as regras primeiro para que os usuários entrem nos grupos corretos de forma automática!
         </div>
       </div>
-
       <div class="modal-footer bg-light border-0 justify-content-center pb-4">
         <button type="button" class="btn btn-outline-secondary fw-bold px-4 shadow-sm" data-bs-dismiss="modal">Cancelar</button>
         <a href="<?php echo $BASE_URL; ?>/admin/contas/sincronizar" class="btn btn-primary fw-bold px-4 shadow-sm" onclick="this.innerHTML='<i class=\'bi bi-hourglass-split me-1\'></i> Sincronizando...'; this.classList.add('disabled');">
           <i class="bi bi-check-circle-fill me-1"></i> Sim, Sincronizar Agora
         </a>
       </div>
-
     </div>
   </div>
 </div>
+
 <div class="modal fade" id="modalExcluirRegra" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-sm">
     <div class="modal-content border-0 shadow-lg">
@@ -500,7 +528,6 @@ if (isset($_GET['msg'])) {
         <i class="bi bi-exclamation-octagon-fill text-danger mb-3" style="font-size: 3.5rem;"></i>
         <h5 class="fw-bold text-dark mb-3">Excluir Regra?</h5>
         <p class="text-muted small mb-4">Esta ação apagará a regra do sistema. Os utilizadores que já foram movidos não serão afetados.</p>
-
         <div class="d-flex justify-content-center gap-2">
           <button type="button" class="btn btn-secondary btn-sm fw-bold px-3 shadow-sm" onclick="voltarModalRegras()">Cancelar</button>
           <a href="#" id="btnConfirmarExclusaoRegra" class="btn btn-danger btn-sm fw-bold px-3 shadow-sm">
@@ -511,6 +538,7 @@ if (isset($_GET['msg'])) {
     </div>
   </div>
 </div>
+
 <script>
   // LÓGICA DO CHECKBOX "SELECIONAR TODOS"
   document.getElementById('checkAll').addEventListener('change', function() {
@@ -520,32 +548,25 @@ if (isset($_GET['msg'])) {
     }
   });
 
-  // === NOVAS FUNÇÕES PARA TROCA SUAVE DE MODAIS ===
-
   // 1. Abre a confirmação de exclusão
   function confirmarExclusaoRegra(idRegra) {
-    // Esconde o modal de regras atual
     var modalRegrasEl = document.getElementById('modalMapeamentoAD');
     var modalRegras = bootstrap.Modal.getInstance(modalRegrasEl);
     if (modalRegras) modalRegras.hide();
 
-    // Preenche o botão vermelho com o ID correto da regra
     var btnConfirmar = document.getElementById('btnConfirmarExclusaoRegra');
     btnConfirmar.href = '<?php echo $BASE_URL; ?>/admin/contas/mapeamento_excluir?id=' + idRegra;
 
-    // Mostra o modal de exclusão
     var modalExcluir = new bootstrap.Modal(document.getElementById('modalExcluirRegra'));
     modalExcluir.show();
   }
 
   // 2. Cancela a exclusão e volta para as regras
   function voltarModalRegras() {
-    // Esconde o modal de exclusão
     var modalExcluirEl = document.getElementById('modalExcluirRegra');
     var modalExcluir = bootstrap.Modal.getInstance(modalExcluirEl);
     if (modalExcluir) modalExcluir.hide();
 
-    // Reabre o modal de regras
     var modalRegras = new bootstrap.Modal(document.getElementById('modalMapeamentoAD'));
     modalRegras.show();
   }
@@ -554,14 +575,12 @@ if (isset($_GET['msg'])) {
   document.addEventListener("DOMContentLoaded", function() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('modal') === 'mapeamento') {
-      // Pequeno atraso para a animação ficar suave
       setTimeout(function() {
         var modalRegras = new bootstrap.Modal(document.getElementById('modalMapeamentoAD'));
         modalRegras.show();
       }, 300);
 
-      // Limpa o URL sutilmente para não voltar a abrir se o utilizador der F5
-      const urlSemModal = window.location.href.replace('&modal=mapeamento', '');
+      const urlSemModal = window.location.href.replace('&modal=mapeamento', '').replace('?modal=mapeamento', '');
       window.history.replaceState({}, document.title, urlSemModal);
     }
   });

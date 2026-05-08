@@ -87,7 +87,7 @@ include __DIR__ . '/../core/layout/header.php';
     </div>
     <div>
         <!-- Rota atualizada para o relatório -->
-        <a href="<?php echo $BASE_URL; ?>/admin/relatorios/impressoes" class="btn btn-outline-primary shadow-sm fw-bold">
+        <a href="<?php echo $BASE_URL; ?>/admin/relatorio" class="btn btn-outline-primary shadow-sm fw-bold">
             <i class="bi bi-bar-chart-fill me-1"></i> Relatório Geral
         </a>
     </div>
