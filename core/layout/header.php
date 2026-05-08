@@ -56,8 +56,9 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-folder2-open"></i> Cadastros</a>
               <ul class="dropdown-menu shadow-sm">
                 <li class="dropdown-header small text-uppercase fw-bold">Utilizadores</li>
-                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/contas"><i class="bi bi-people text-muted me-2"></i>Contas da Rede</a></li>
+                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/contas"><i class="bi bi-people text-muted me-2"></i>Contas Usuários</a></li>
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/grupos"><i class="bi bi-diagram-3 text-muted me-2"></i>Grupos</a></li>
+                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/mapeamento"><i class="bi bi-diagram-3-fill text-muted me-2"></i>Mapeamento do AD</a></li>
 
                 <?php if ($nivel >= 2) { ?>
                   <li>

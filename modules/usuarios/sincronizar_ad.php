@@ -1,9 +1,11 @@
 <?php
 
 /**
- * IFQUOTA - SINCRONIZAÇÃO INTELIGENTE COM ACTIVE DIRECTORY
- * Puxa usuários novos do AD e atribui automaticamente ao grupo correto.
+ * IFQUOTA - Sincronização Dinâmica com Active Directory (UNIVERSAL & SNIPER)
+ * Lógica: Lê a tabela mapeamento_ad. Procura a OU em TODO o caminho do AD 
+ * para suportar sub-pastas perfeitamente. Fim da criação de grupos lixo!
  */
+
 include_once __DIR__ . '/../../core/db.php';
 include_once __DIR__ . '/../../core/functions.php';
 
@@ -11,35 +13,30 @@ if (session_status() === PHP_SESSION_NONE) {
     sec_session_start();
 }
 
-// ==========================================
-// DETEÇÃO INTELIGENTE DE AMBIENTE
-// ==========================================
 $host_atual = $_SERVER['HTTP_HOST'] ?? '';
 $BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
-// Apenas Admin (Nível 2).
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 2) {
     header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
 // ============================================================================
-// 1. DICIONÁRIO DE MAPEAMENTO (OU do AD -> NOME EXATO DO GRUPO NO IFQUOTA)
+// 1. CARREGAR REGRAS DE MAPEAMENTO (Ordenadas para testar cargos primeiro)
 // ============================================================================
-$mapeamento_ous = [
-    'UO_NTI'           => 'GRUPO-NGTI',
-    'UO_NPED'          => 'GRUPO-NPED',
-    'UO_DOCENTE'       => 'GRUPO-DOCENTE-800',
-    'UO_TAE'           => 'GRUPO-TAE-800',
-    'UO_TERCEIRIZADOS' => 'GRUPO-TAE-800' 
-];
-
-$grupos_db = [];
-$res_g = $mysqli->query("SELECT cod_grupo, grupo FROM grupos");
-while ($row = $res_g->fetch_assoc()) {
-    $grupos_db[$row['grupo']] = $row['cod_grupo'];
+$mapeamentos = [];
+// ORDER BY cargo_ad DESC garante que as regras específicas (com cargo) 
+// sejam validadas antes das regras genéricas da mesma OU!
+$res_map = $mysqli->query("SELECT ou_ad, cargo_ad, cod_grupo FROM mapeamento_ad ORDER BY cargo_ad DESC");
+if ($res_map) {
+    while ($row = $res_map->fetch_assoc()) {
+        $mapeamentos[] = $row;
+    }
 }
 
+// ============================================================================
+// 2. CONFIGURAÇÃO E LIGAÇÃO AO LDAP
+// ============================================================================
 $stmt = $mysqli->prepare("SELECT LDAP_server, LDAP_port, LDAP_base, LDAP_user, LDAP_password FROM config_geral WHERE id = 1");
 $stmt->execute();
 $stmt->bind_result($ldap_server, $ldap_porta, $ldap_base, $ldap_usuario, $ldap_senha);
@@ -61,8 +58,13 @@ if (!$bind) {
     exit();
 }
 
+// ============================================================================
+// 3. BUSCA DE UTILIZADORES
+// ============================================================================
 $filtro_sync = "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(sAMAccountName=*))";
-$search = @ldap_search($ldapconn, $ldap_base, $filtro_sync);
+$attributes = ["sAMAccountName", "distinguishedName", "title"];
+
+$search = @ldap_search($ldapconn, $ldap_base, $filtro_sync, $attributes);
 $info = ldap_get_entries($ldapconn, $search);
 
 if (!$info || $info["count"] == 0) {
@@ -70,52 +72,89 @@ if (!$info || $info["count"] == 0) {
     exit();
 }
 
-$usuarios_existentes = [];
-$res_banco = $mysqli->query("SELECT usuario FROM usuarios");
-while ($row = $res_banco->fetch_assoc()) {
-    $usuarios_existentes[] = strtolower($row['usuario']);
-}
-
 $novos_cadastrados = 0;
 $atribuidos_grupo = 0;
 
 for ($i = 0; $i < $info["count"]; $i++) {
-    if (isset($info[$i]["samaccountname"][0])) {
-        $login_ad = strtolower(trim($info[$i]["samaccountname"][0]));
-        $dn_ad = strtoupper($info[$i]["dn"]);
+    if (!isset($info[$i]["samaccountname"][0])) continue;
 
-        if (!in_array($login_ad, $usuarios_existentes) && $login_ad != "") {
-            $stmt_ins = $mysqli->prepare("INSERT INTO usuarios (usuario) VALUES (?)");
-            $stmt_ins->bind_param('s', $login_ad);
-            $stmt_ins->execute();
-            $novo_cod_usuario = $stmt_ins->insert_id; 
-            $stmt_ins->close();
+    $login_ad = strtolower(trim($info[$i]["samaccountname"][0]));
+    $dn_ad    = strtoupper($info[$i]["dn"]); // Caminho completo (Ex: CN=João,OU=Sub_TAE,OU=UO_TAE,DC=...)
+    $cargo_ad = isset($info[$i]["title"][0]) ? trim($info[$i]["title"][0]) : '';
 
-            $novos_cadastrados++;
-            $usuarios_existentes[] = $login_ad;
+    // ==============================================================
+    // A. O UTILIZADOR JÁ EXISTE NO IFQUOTA?
+    // ==============================================================
+    $cod_usuario = 0;
+    $chk_user = $mysqli->prepare("SELECT cod_usuario FROM usuarios WHERE usuario = ?");
+    $chk_user->bind_param('s', $login_ad);
+    $chk_user->execute();
+    $chk_user->store_result();
 
-            $grupo_destino_cod = null;
-            foreach ($mapeamento_ous as $nome_ou => $nome_grupo_alvo) {
-                if (strpos($dn_ad, "OU=" . $nome_ou) !== false) {
-                    if (isset($grupos_db[$nome_grupo_alvo])) {
-                        $grupo_destino_cod = $grupos_db[$nome_grupo_alvo];
+    if ($chk_user->num_rows > 0) {
+        $chk_user->bind_result($cod_usuario);
+        $chk_user->fetch();
+    } else {
+        $ins_user = $mysqli->prepare("INSERT INTO usuarios (usuario) VALUES (?)");
+        $ins_user->bind_param('s', $login_ad);
+        $ins_user->execute();
+        $cod_usuario = $ins_user->insert_id;
+        $ins_user->close();
+        $novos_cadastrados++;
+    }
+    $chk_user->close();
+
+    // ==============================================================
+    // B. O UTILIZADOR JÁ TEM GRUPO? (Se sim, não mexe!)
+    // ==============================================================
+    $tem_grupo = false;
+    $chk_vinculo = $mysqli->prepare("SELECT cod_grupo FROM grupo_usuario WHERE cod_usuario = ?");
+    $chk_vinculo->bind_param('i', $cod_usuario);
+    $chk_vinculo->execute();
+    $chk_vinculo->store_result();
+    if ($chk_vinculo->num_rows > 0) {
+        $tem_grupo = true;
+    }
+    $chk_vinculo->close();
+
+    // ==============================================================
+    // C. ATRIBUIÇÃO INTELIGENTE (Só para utilizadores virgens no sistema)
+    // ==============================================================
+    if (!$tem_grupo) {
+        $grupo_destino_cod = 0;
+
+        foreach ($mapeamentos as $map) {
+            // A Mágica: Procura a OU em qualquer parte do caminho! 
+            // Resolve o problema das Sub-OUs automaticamente.
+            if (stripos($dn_ad, "OU=" . $map['ou_ad']) !== false) {
+
+                if (!empty($map['cargo_ad'])) {
+                    // Regra Específica: Bateu a OU, mas o Cargo também bate?
+                    if (stripos($cargo_ad, $map['cargo_ad']) !== false) {
+                        $grupo_destino_cod = $map['cod_grupo'];
+                        break; // Encontrou a regra perfeita, sai do loop!
                     }
+                } else {
+                    // Regra Genérica: Bateu a OU e a regra não exige cargo
+                    $grupo_destino_cod = $map['cod_grupo'];
                     break;
                 }
             }
+        }
 
-            if ($grupo_destino_cod !== null) {
-                $stmt_grp = $mysqli->prepare("INSERT INTO grupo_usuario (cod_grupo, cod_usuario) VALUES (?, ?)");
-                $stmt_grp->bind_param('ii', $grupo_destino_cod, $novo_cod_usuario);
-                $stmt_grp->execute();
-                $stmt_grp->close();
-                $atribuidos_grupo++;
-            }
+        // Se encontrou uma regra válida, vincula. 
+        // Se não encontrou, o utilizador fica no sistema como "Sem grupo" (Fim do lixo no DB!)
+        if ($grupo_destino_cod > 0) {
+            $ins_vinculo = $mysqli->prepare("INSERT INTO grupo_usuario (cod_usuario, cod_grupo) VALUES (?, ?)");
+            $ins_vinculo->bind_param('ii', $cod_usuario, $grupo_destino_cod);
+            $ins_vinculo->execute();
+            $ins_vinculo->close();
+            $atribuidos_grupo++;
         }
     }
 }
-ldap_close($ldapconn);
+ldap_unbind($ldapconn);
 
-$mensagem = "Sincronização concluída! <b>{$novos_cadastrados}</b> novos usuários importados. <b>{$atribuidos_grupo}</b> foram colocados nos grupos automaticamente.";
+$mensagem = "Sincronização concluída! <b>{$novos_cadastrados}</b> contas criadas. <b>{$atribuidos_grupo}</b> foram mapeadas automaticamente.";
 header("Location: " . $BASE_URL . "/admin/contas?msg=" . urlencode($mensagem) . "&tipo=success");
 exit();

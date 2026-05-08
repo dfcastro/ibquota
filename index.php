@@ -106,13 +106,14 @@ $rotas = [
     'admin/usuarios/excluir' => 'modules/adm_users/adm_users_excluir.php',
 
     // ========================================================
-    // NOVAS ROTAS DO MÓDULO: Contas de Utilizadores (Rede/AD)
+    // ROTAS DO MÓDULO: Contas de Utilizadores (Rede/AD)
     // ========================================================
     'admin/contas'             => 'modules/usuarios/index.php',
     'admin/contas/sincronizar' => 'modules/usuarios/sincronizar_ad.php',
     'admin/contas/add'         => 'modules/usuarios/usuario_add.php',
     'admin/contas/gerenciar'   => 'modules/usuarios/usuario_gerenciar.php',
     'admin/contas/excluir'     => 'modules/usuarios/usuario_excluir.php',
+    'admin/contas/lote' => 'modules/usuarios/usuario_lote.php',
 
 
     // Rotas do Módulo: Locais (Departamentos)
@@ -126,6 +127,12 @@ $rotas = [
     'admin/impressoras/add'     => 'modules/impressoras/impressora_add.php',
     'admin/impressoras/editar'  => 'modules/impressoras/impressora_editar.php',
     'admin/impressoras/excluir' => 'modules/impressoras/impressora_excluir.php',
+
+    // Rotas do Módulo: Mapeamento AD
+    
+    'admin/mapeamento'                => 'modules/mapeamento/index.php', // Podes apagar esta linha, já não usamos!
+    'admin/contas/mapeamento_add'     => 'modules/usuarios/mapeamento_add.php',
+    'admin/contas/mapeamento_excluir' => 'modules/usuarios/mapeamento_excluir.php',
 
 ];
 
