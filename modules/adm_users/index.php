@@ -13,7 +13,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // Proteção: Apenas Admin (Nível 2) acessa a gestão de acessos
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
-  header("Location: /gg/login");
+  header("Location: /login");
   exit();
 }
 

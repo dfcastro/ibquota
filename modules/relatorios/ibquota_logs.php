@@ -11,7 +11,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
-   header("Location: /gg/login");
+   header("Location: /login");
    exit();
 }
 

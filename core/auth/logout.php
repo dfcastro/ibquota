@@ -22,5 +22,5 @@ session_destroy();
 // 4. Redireciona de volta para a tela de login
 
 
-header("Location: /gg/login");
+header("Location: /login");
 exit();

@@ -11,13 +11,23 @@ if (session_status() === PHP_SESSION_NONE) {
     sec_session_start();
 }
 
-// O CAMINHO ABSOLUTO DO TEU PROJETO NO SERVIDOR
-$BASE_URL = '/gg';
+// ==========================================
+// DETECÇÃO INTELIGENTE DE AMBIENTE (URL BASE)
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'];
+
+if ($host_atual === 'localhost' || $host_atual === '127.0.0.1') {
+    // No seu Windows/XAMPP, você acessa localhost/gg/
+    $BASE_URL = '/gg'; 
+} else {
+    // No servidor de produção com DNS, a raiz já é o sistema
+    $BASE_URL = ''; 
+}
 
 // Captura a URL digitada. Se estiver vazia, definimos a flag 'raiz'
 $url = isset($_GET['url']) ? trim($_GET['url'], '/') : 'raiz';
 
-// Correção extra para o XAMPP: se a pasta 'gg' vier agarrada na URL, nós cortamo-la!
+// Correção extra: remove o diretório 'gg/' da URL capturada caso ele apareça
 if (strpos($url, 'gg/') === 0) {
     $url = substr($url, 3);
 }
@@ -113,8 +123,7 @@ $rotas = [
     'admin/contas/add'         => 'modules/usuarios/usuario_add.php',
     'admin/contas/gerenciar'   => 'modules/usuarios/usuario_gerenciar.php',
     'admin/contas/excluir'     => 'modules/usuarios/usuario_excluir.php',
-    'admin/contas/lote' => 'modules/usuarios/usuario_lote.php',
-
+    'admin/contas/lote'        => 'modules/usuarios/usuario_lote.php',
 
     // Rotas do Módulo: Locais (Departamentos)
     'admin/locais'         => 'modules/locais/index.php',
@@ -129,7 +138,6 @@ $rotas = [
     'admin/impressoras/excluir' => 'modules/impressoras/impressora_excluir.php',
 
     // Rotas do Módulo: Mapeamento AD
-    
     'admin/mapeamento'                => 'modules/mapeamento/index.php', // Podes apagar esta linha, já não usamos!
     'admin/contas/mapeamento_add'     => 'modules/usuarios/mapeamento_add.php',
     'admin/contas/mapeamento_excluir' => 'modules/usuarios/mapeamento_excluir.php',
