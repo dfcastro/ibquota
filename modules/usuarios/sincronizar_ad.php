@@ -2,8 +2,8 @@
 
 /**
  * IFQUOTA - Sincronização Dinâmica com Active Directory (UNIVERSAL & SNIPER)
- * Lógica: Lê a tabela mapeamento_ad. Procura a OU em TODO o caminho do AD 
- * para suportar sub-pastas perfeitamente. Fim da criação de grupos lixo!
+ * Lê a tabela mapeamento_ad e varre as sub-pastas.
+ * AGORA: Captura e atualiza o e-mail dos utilizadores automaticamente!
  */
 
 include_once __DIR__ . '/../../core/db.php';
@@ -25,8 +25,6 @@ if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION[
 // 1. CARREGAR REGRAS DE MAPEAMENTO (Ordenadas para testar cargos primeiro)
 // ============================================================================
 $mapeamentos = [];
-// ORDER BY cargo_ad DESC garante que as regras específicas (com cargo) 
-// sejam validadas antes das regras genéricas da mesma OU!
 $res_map = $mysqli->query("SELECT ou_ad, cargo_ad, cod_grupo FROM mapeamento_ad ORDER BY cargo_ad DESC");
 if ($res_map) {
     while ($row = $res_map->fetch_assoc()) {
@@ -62,7 +60,9 @@ if (!$bind) {
 // 3. BUSCA DE UTILIZADORES
 // ============================================================================
 $filtro_sync = "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(sAMAccountName=*))";
-$attributes = ["sAMAccountName", "distinguishedName", "title"];
+
+// NOVIDADE: Pedimos o atributo "mail" ao servidor AD
+$attributes = ["sAMAccountName", "distinguishedName", "title", "mail"];
 
 $search = @ldap_search($ldapconn, $ldap_base, $filtro_sync, $attributes);
 $info = ldap_get_entries($ldapconn, $search);
@@ -79,24 +79,38 @@ for ($i = 0; $i < $info["count"]; $i++) {
     if (!isset($info[$i]["samaccountname"][0])) continue;
 
     $login_ad = strtolower(trim($info[$i]["samaccountname"][0]));
-    $dn_ad    = strtoupper($info[$i]["dn"]); // Caminho completo (Ex: CN=João,OU=Sub_TAE,OU=UO_TAE,DC=...)
+    $dn_ad    = strtoupper($info[$i]["dn"]); 
     $cargo_ad = isset($info[$i]["title"][0]) ? trim($info[$i]["title"][0]) : '';
+    
+    // NOVIDADE: Captura o e-mail de forma segura
+    $email_ad = isset($info[$i]["mail"][0]) ? strtolower(trim($info[$i]["mail"][0])) : null;
 
     // ==============================================================
-    // A. O UTILIZADOR JÁ EXISTE NO IFQUOTA?
+    // A. O UTILIZADOR JÁ EXISTE NO IFQUOTA? (E Atualização de E-mail)
     // ==============================================================
     $cod_usuario = 0;
-    $chk_user = $mysqli->prepare("SELECT cod_usuario FROM usuarios WHERE usuario = ?");
+    $chk_user = $mysqli->prepare("SELECT cod_usuario, email FROM usuarios WHERE usuario = ?");
     $chk_user->bind_param('s', $login_ad);
     $chk_user->execute();
     $chk_user->store_result();
 
     if ($chk_user->num_rows > 0) {
-        $chk_user->bind_result($cod_usuario);
+        // Já existe! Vamos pegar os dados dele.
+        $chk_user->bind_result($cod_usuario, $email_atual);
         $chk_user->fetch();
+        
+        // Se o AD enviou um e-mail diferente do que temos no banco, nós atualizamos!
+        if (!empty($email_ad) && $email_ad !== $email_atual) {
+            $upd_user = $mysqli->prepare("UPDATE usuarios SET email = ? WHERE cod_usuario = ?");
+            $upd_user->bind_param('si', $email_ad, $cod_usuario);
+            $upd_user->execute();
+            $upd_user->close();
+        }
+        
     } else {
-        $ins_user = $mysqli->prepare("INSERT INTO usuarios (usuario) VALUES (?)");
-        $ins_user->bind_param('s', $login_ad);
+        // NOVIDADE: Inserimos o usuário NOVO já com a coluna de e-mail!
+        $ins_user = $mysqli->prepare("INSERT INTO usuarios (usuario, email) VALUES (?, ?)");
+        $ins_user->bind_param('ss', $login_ad, $email_ad);
         $ins_user->execute();
         $cod_usuario = $ins_user->insert_id;
         $ins_user->close();
@@ -124,26 +138,20 @@ for ($i = 0; $i < $info["count"]; $i++) {
         $grupo_destino_cod = 0;
 
         foreach ($mapeamentos as $map) {
-            // A Mágica: Procura a OU em qualquer parte do caminho! 
-            // Resolve o problema das Sub-OUs automaticamente.
             if (stripos($dn_ad, "OU=" . $map['ou_ad']) !== false) {
 
                 if (!empty($map['cargo_ad'])) {
-                    // Regra Específica: Bateu a OU, mas o Cargo também bate?
                     if (stripos($cargo_ad, $map['cargo_ad']) !== false) {
                         $grupo_destino_cod = $map['cod_grupo'];
-                        break; // Encontrou a regra perfeita, sai do loop!
+                        break; 
                     }
                 } else {
-                    // Regra Genérica: Bateu a OU e a regra não exige cargo
                     $grupo_destino_cod = $map['cod_grupo'];
                     break;
                 }
             }
         }
 
-        // Se encontrou uma regra válida, vincula. 
-        // Se não encontrou, o utilizador fica no sistema como "Sem grupo" (Fim do lixo no DB!)
         if ($grupo_destino_cod > 0) {
             $ins_vinculo = $mysqli->prepare("INSERT INTO grupo_usuario (cod_usuario, cod_grupo) VALUES (?, ?)");
             $ins_vinculo->bind_param('ii', $cod_usuario, $grupo_destino_cod);

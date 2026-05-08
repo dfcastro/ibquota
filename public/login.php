@@ -251,7 +251,11 @@ if (isset($_POST['login'], $_POST['senha'])) {
 
           <div class="d-flex justify-content-between align-items-center mb-4">
             <!-- Link amigável para Lembrar Senha -->
-            <a href="<?php echo $BASE_URL; ?>/lembrar-senha" class="small text-success text-decoration-none fw-semibold">Esqueceu a senha?</a>
+            <div class="d-flex justify-content-between align-items-center mb-4">
+              <a href="#" data-bs-toggle="modal" data-bs-target="#modalEsqueceuSenha" class="small text-success text-decoration-none fw-semibold">
+                <i class="bi bi-question-circle me-1"></i>Esqueceu a senha?
+              </a>
+            </div>
           </div>
 
           <button class="w-100 btn btn-lg btn-success shadow-sm fw-bold" type="submit">
@@ -265,7 +269,39 @@ if (isset($_POST['login'], $_POST['senha'])) {
     <p class="mt-4 mb-3 text-muted small">&copy; <?php echo date("Y"); ?> NTI - IFNMG Campus Almenara</p>
 
   </main>
-
+  <div class="modal fade" id="modalEsqueceuSenha" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title fw-bold"><i class="bi bi-key-fill me-2"></i>Recuperação de Senha</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4 text-center bg-light">
+          <i class="bi bi-shield-lock text-success mb-3" style="font-size: 3.5rem;"></i>
+          <h5 class="fw-bold text-dark">Acesso Integrado à Rede</h5>
+          <p class="text-muted mt-3 mb-0">
+            O IFQUOTA utiliza as suas credenciais oficiais do Active Directory do <b>IFNMG - Campus Almenara</b>. Por questões de segurança, essa alteração não é possível por este sistema.
+          </p>
+          <div class="alert alert-warning border-0 shadow-sm mt-4 mb-0 text-start small text-dark">
+            <i class="bi bi-info-circle-fill text-primary me-1"></i> <b>O que fazer?</b><br>
+            Para redefinir a sua senha da rede, por favor entre em contato com o Núcleo de Tecnologia da Informação <span class="mt-1 d-block">
+              <strong>WhatsApp:</strong>
+              <a href="https://wa.me/5533984447401" target="_blank" class="text-success text-decoration-none fw-bold">
+                +55 33 98444-7401
+              </a> <br>
+              <strong>E-mail:</strong>
+              <a href="mailto:ti.almenara@ifnmg.edu.br" class="text-success text-decoration-none fw-bold">
+                ti.almenara@ifnmg.edu.br
+              </a>
+            </span>
+          </div>
+        </div>
+        <div class="modal-footer bg-light border-0 justify-content-center pb-4">
+          <button type="button" class="btn btn-secondary shadow-sm fw-bold px-4" data-bs-dismiss="modal">Entendi</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
