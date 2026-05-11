@@ -20,9 +20,56 @@ $host_atual = $_SERVER['HTTP_HOST'] ?? '';
 $BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 // Proteção: Apenas Admin (Nível 2)
-if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 2) {
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
   header("Location: " . $BASE_URL . "/login");
   exit();
+}
+
+$msg_erro = "";
+
+// ==========================================
+// PROCESSAMENTO DO FORMULÁRIO DE ADIÇÃO (POST)
+// ==========================================
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'], $_POST['senha'])) {
+    
+    // Validação do CSRF Token
+    $token_recebido = $_POST['csrf_token'] ?? '';
+    if (!isset($_SESSION['csrf_token']) || $token_recebido !== $_SESSION['csrf_token']) {
+        $msg_erro = "Sessão expirada ou requisição inválida. Tente novamente.";
+    } else {
+        $login_novo = trim($_POST['login']);
+        $senha_nova = $_POST['senha'];
+        $nome_novo = trim($_POST['nome']);
+        $email_novo = trim($_POST['email']);
+        $permissao_nova = (int)$_POST['permissao'];
+
+        // 1. Verifica se já existe um admin com esse login
+        $chk = $mysqli->prepare("SELECT cod_adm_users FROM adm_users WHERE login = ? LIMIT 1");
+        $chk->bind_param('s', $login_novo);
+        $chk->execute();
+        $chk->store_result();
+
+        if ($chk->num_rows > 0) {
+            $msg_erro = "O login '<b>{$login_novo}</b>' já está em uso por outro administrador.";
+        } else {
+            // 2. Cria o Hash seguro da senha (Bcrypt moderno)
+            $senha_hash = password_hash($senha_nova, PASSWORD_DEFAULT);
+
+            // 3. Insere no banco de dados
+            $ins = $mysqli->prepare("INSERT INTO adm_users (login, senha, nome, email, permissao) VALUES (?, ?, ?, ?, ?)");
+            $ins->bind_param('ssssi', $login_novo, $senha_hash, $nome_novo, $email_novo, $permissao_nova);
+            
+            if ($ins->execute()) {
+                // Redireciona para limpar o POST e mostrar a mensagem de sucesso
+                header("Location: " . $BASE_URL . "/admin/usuarios/add?msg=add");
+                exit();
+            } else {
+                $msg_erro = "Erro ao salvar no banco de dados: " . $mysqli->error;
+            }
+            $ins->close();
+        }
+        $chk->close();
+    }
 }
 
 // 2. HEADER CORRIGIDO: Recuando dois níveis
@@ -89,6 +136,14 @@ if (isset($_GET['msg'])) {
           </div>";
   }
 }
+
+// Alerta para erros do POST
+if (!empty($msg_erro)) {
+    echo "<div class='alert alert-danger alert-dismissible fade show shadow-sm border-0 mb-4' role='alert'>
+            <i class='bi bi-exclamation-triangle-fill me-2'></i> <strong>{$msg_erro}</strong>
+            <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
+          </div>";
+}
 ?>
 
 <div class="row">
@@ -123,7 +178,6 @@ if (isset($_GET['msg'])) {
                     <small class="text-muted"><?php echo htmlspecialchars($email); ?></small>
                   </td>
                   <td class="text-end pe-4">
-                    <!-- Links blindados com as rotas limpas -->
                     <a href="<?php echo $BASE_URL; ?>/admin/usuarios/editar?cod_adm_users=<?php echo $cod_adm_users; ?>" class="btn btn-outline-primary btn-sm shadow-sm" title="Editar"><i class="bi bi-pencil-square"></i></a>
                     <a href="<?php echo $BASE_URL; ?>/admin/usuarios/excluir?cod_adm_users=<?php echo $cod_adm_users; ?>" class="btn btn-outline-danger btn-sm ms-1 shadow-sm" title="Excluir" onclick="return confirm('ATENÇÃO: Deseja realmente excluir este administrador? Ele perderá acesso ao painel imediatamente.');"><i class="bi bi-trash3"></i></a>
                   </td>
@@ -143,7 +197,6 @@ if (isset($_GET['msg'])) {
     <div class="card shadow-sm border-0 border-top border-success border-3">
       <div class="card-header bg-white fw-bold py-3"><i class="bi bi-person-plus-fill text-success me-2"></i>Novo Acesso</div>
       <div class="card-body bg-light">
-        <!-- Rota para a adição -->
         <form action="<?php echo $BASE_URL; ?>/admin/usuarios/add" method="post">
           <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token'] ?? ''; ?>">
           <div class="mb-3">

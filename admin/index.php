@@ -22,16 +22,11 @@ $host_atual = $_SERVER['HTTP_HOST'] ?? '';
 $BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 // Validação de Sessão e Rotas Limpas
-if (!isset($_SESSION['usuario'])) {
-    header("Location: " . $BASE_URL . "/login");
-    exit();
-}
-
-if (!isset($_SESSION['permissao']) || $_SESSION['permissao'] < 2) {
+// Permite NTI (2) e Diretor (3)
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || ($_SESSION['permissao'] != 2 && $_SESSION['permissao'] != 3)) {
     header("Location: " . $BASE_URL . "/meu-painel");
     exit();
 }
-
 // ==========================================
 // BUSCA DE MÉTRICAS (RÁPIDO E DIRETO NO BANCO)
 // ==========================================
@@ -78,6 +73,15 @@ if ($cups_status) {
 }
 
 include __DIR__ . '/../core/layout/header.php';
+// Exibe a mensagem de erro caso ele tente acessar uma rota bloqueada e seja redirecionado pra cá
+if (isset($_GET['msg']) && $_GET['msg'] === 'acesso_negado') {
+    echo '
+    <div class="alert alert-danger alert-dismissible fade show shadow-sm mb-4" role="alert">
+        <i class="bi bi-shield-lock-fill me-2 fs-5"></i> 
+        <strong>Acesso Restrito:</strong> Você tentou acessar uma página técnica exclusiva da equipe do NTI.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>';
+}
 ?>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 mt-2 border-bottom border-light pb-3">

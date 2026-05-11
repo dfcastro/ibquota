@@ -3,6 +3,7 @@
 /**
  * IFQUOTA - GERENCIADOR DE FILA DE IMPRESSÃO COLORIDA
  * Aprovação NTI (Até 500 págs) / Direção (Acima de 500)
+ * Inclui Histórico com Busca e Paginação
  */
 
 // 1. INCLUDES BLINDADOS
@@ -26,7 +27,7 @@ if (empty($_SESSION['csrf_token'])) {
 
 // 2. Proteção da página: Admins (2) e Diretores (3)
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || ($_SESSION['permissao'] != 2 && $_SESSION['permissao'] != 3)) {
-    header("Location: " . $BASE_URL . "/login");
+    header("Location: " . $BASE_URL . "/admin/dashboard?msg=acesso_negado");
     exit();
 }
 
@@ -36,7 +37,6 @@ $tipo_msg = "";
 
 // ========================================================================
 // ⚙️ CONFIGURAÇÃO DE DIRETORES
-// O Diretor agora é validado pelo nível de permissão (3) no banco
 // ========================================================================
 $is_diretor = ($_SESSION['permissao'] == 3);
 
@@ -51,7 +51,6 @@ if (isset($_GET['view'])) {
     $stmt_v->bind_result($path, $name);
 
     if ($stmt_v->fetch()) {
-        // O caminho correto saindo do 'admin/' e entrando no 'public/'
         $caminho_real = __DIR__ . "/../public/" . $path;
 
         if (file_exists($caminho_real)) {
@@ -83,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'], $_POST['id_ped
     if ($row = $res_ped->fetch_assoc()) {
 
         $caminho_real = __DIR__ . "/../public/" . $row['arquivo_caminho'];
-
         $total_paginas_pedido = $row['paginas'] * $row['copias'];
 
         // --- CALCULA O CONSUMO MENSAL ATUAL ---
@@ -92,7 +90,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'], $_POST['id_ped
         $novo_total = $total_consumido + $total_paginas_pedido;
 
         if ($acao == 'aprovar') {
-
             // Trava de Segurança das 500 Cotas
             if ($novo_total > 500 && !$is_diretor) {
                 $msg = "Aprovação Negada! Este pedido fará o campus ultrapassar as 500 cotas coloridas mensais. <b>Somente a Direção</b> pode liberar esta impressão.";
@@ -104,7 +101,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'], $_POST['id_ped
                 $cmd_titulo = escapeshellarg("Autorizado-" . $row['arquivo_nome']);
                 $cmd_arquivo = escapeshellarg(realpath($caminho_real));
 
-                // Extração inteligente de páginas
                 $paginas_alvo = $row['paginas_especificas'];
                 $cmd_page_ranges = !empty($paginas_alvo) ? "-o page-ranges=" . escapeshellarg($paginas_alvo) : "";
 
@@ -152,19 +148,55 @@ $cor_barra = 'bg-success';
 if ($percentual_uso > 75) $cor_barra = 'bg-warning';
 if ($percentual_uso >= 100) $cor_barra = 'bg-danger';
 
+// ==========================================
+// 4. LÓGICA DE BUSCA E PAGINAÇÃO DO HISTÓRICO
+// ==========================================
+if (!defined('QTDE_POR_PAGINA')) define('QTDE_POR_PAGINA', 20);
+
+$busca = isset($_GET['busca']) ? trim($_GET['busca']) : '';
+$p = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
+$qtde_por_pagina = (int)QTDE_POR_PAGINA;
+$p_inicio = ($p - 1) * $qtde_por_pagina;
+$p_num_registros = 0;
+
+if ($busca !== '') {
+    $busca_sql = "%{$busca}%";
+    $stmt_count = $mysqli->prepare("SELECT COUNT(*) FROM pedidos_coloridos WHERE status != 'Pendente' AND (usuario LIKE ? OR arquivo_nome LIKE ? OR status LIKE ? OR aprovado_por LIKE ?)");
+    $stmt_count->bind_param('ssss', $busca_sql, $busca_sql, $busca_sql, $busca_sql);
+} else {
+    $stmt_count = $mysqli->prepare("SELECT COUNT(*) FROM pedidos_coloridos WHERE status != 'Pendente'");
+}
+$stmt_count->execute();
+$stmt_count->bind_result($p_num_registros);
+$stmt_count->fetch();
+$stmt_count->close();
+
+if ($busca !== '') {
+    $stmt_hist = $mysqli->prepare("SELECT id, usuario, arquivo_nome, paginas, copias, status, aprovado_por, DATE_FORMAT(data_pedido, '%d/%m/%Y %H:%i') as data_res FROM pedidos_coloridos WHERE status != 'Pendente' AND (usuario LIKE ? OR arquivo_nome LIKE ? OR status LIKE ? OR aprovado_por LIKE ?) ORDER BY data_pedido DESC LIMIT ?, ?");
+    $stmt_hist->bind_param('ssssii', $busca_sql, $busca_sql, $busca_sql, $busca_sql, $p_inicio, $qtde_por_pagina);
+} else {
+    $stmt_hist = $mysqli->prepare("SELECT id, usuario, arquivo_nome, paginas, copias, status, aprovado_por, DATE_FORMAT(data_pedido, '%d/%m/%Y %H:%i') as data_res FROM pedidos_coloridos WHERE status != 'Pendente' ORDER BY data_pedido DESC LIMIT ?, ?");
+    $stmt_hist->bind_param('ii', $p_inicio, $qtde_por_pagina);
+}
+$stmt_hist->execute();
+$historico = $stmt_hist->get_result();
+$stmt_hist->close();
+
 include __DIR__ . '/../core/layout/header.php';
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
     <div>
-        <h3 class="fw-bold text-dark mb-0"><i class="bi bi-palette-fill text-danger me-2"></i> Retenção de Coloridas</h3>
-        <p class="text-muted mb-0 small">Fila de aprovação de documentos coloridos</p>
+        <h3 class="fw-bold text-dark mb-0"><i class="bi bi-palette-fill text-danger me-2"></i> Fila de Coloridas</h3>
+        <p class="text-muted mb-0 small">Aprovação de documentos coloridos e histórico</p>
     </div>
-    <a href="<?php echo $BASE_URL; ?>/admin/dashboard" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
+    <a href="<?php echo $BASE_URL; ?>/admin/dashboard" class="btn btn-outline-secondary shadow-sm fw-bold">
+        <i class="bi bi-arrow-left me-1"></i> Voltar
+    </a>
 </div>
 
 <?php if ($msg != "") { ?>
-    <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible shadow-sm">
+    <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible shadow-sm animate__animated animate__fadeIn mb-4">
         <i class="bi bi-info-circle-fill me-2"></i> <?php echo $msg; ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
@@ -199,7 +231,7 @@ include __DIR__ . '/../core/layout/header.php';
     </div>
 </div>
 
-<div class="card shadow-sm border-0 border-top border-primary border-3">
+<div class="card shadow-sm border-0 border-top border-primary border-3 mb-5">
     <div class="card-header bg-white fw-bold py-3">
         <i class="bi bi-hourglass-split me-2 text-primary"></i> Aguardando Liberação
     </div>
@@ -228,14 +260,14 @@ include __DIR__ . '/../core/layout/header.php';
 
                             echo "<tr>";
                             echo "<td class='ps-4 text-muted small'>{$data_formatada}</td>";
-                            echo "<td class='fw-bold text-dark'><i class='bi bi-person me-1'></i>" . htmlspecialchars($p['usuario']) . "</td>";
-                            echo "<td><span class='text-truncate d-inline-block' style='max-width: 250px;' title='" . htmlspecialchars($p['arquivo_nome']) . "'><i class='bi bi-file-earmark-pdf text-danger me-1'></i>" . htmlspecialchars($p['arquivo_nome']) . "</span></td>";
+                            echo "<td class='fw-bold text-dark'><i class='bi bi-person me-1 text-secondary'></i>" . htmlspecialchars($p['usuario']) . "</td>";
+                            echo "<td><span class='text-truncate d-inline-block small' style='max-width: 250px;' title='" . htmlspecialchars($p['arquivo_nome']) . "'><i class='bi bi-file-earmark-pdf text-danger me-1'></i>" . htmlspecialchars($p['arquivo_nome']) . "</span></td>";
 
                             // Mostra total de páginas e quais são coloridas
                             echo "<td class='text-center fw-bold'>";
                             echo "{$p['paginas']} pág(s) x {$p['copias']} cpy<br><span class='badge bg-dark rounded-pill'>= {$total_folhas}</span>";
                             if (!empty($p['paginas_especificas'])) {
-                                echo "<br><small class='text-primary' style='font-size: 0.75rem;'>Págs a imprimir: " . htmlspecialchars($p['paginas_especificas']) . "</small>";
+                                echo "<br><small class='text-primary' style='font-size: 0.75rem;'>Págs: " . htmlspecialchars($p['paginas_especificas']) . "</small>";
                             }
                             echo "</td>";
 
@@ -243,18 +275,18 @@ include __DIR__ . '/../core/layout/header.php';
                             echo "<td class='text-center'>";
                             echo "<div class='d-flex justify-content-center gap-2'>";
 
-                            // ROTA LIMPA NO VISUALIZADOR
-                            echo "<a href='{$BASE_URL}/admin/coloridas?view={$p['id']}' target='_blank' class='btn btn-sm btn-outline-primary' title='Ler PDF'><i class='bi bi-eye'></i></a>";
+                            // VISUALIZADOR
+                            echo "<a href='{$BASE_URL}/admin/coloridas?view={$p['id']}' target='_blank' class='btn btn-sm btn-outline-primary shadow-sm' title='Ler PDF'><i class='bi bi-eye'></i></a>";
 
-                            // ROTA LIMPA NO FORM ACTION
+                            // FORM ACTION
                             echo "<form action='{$BASE_URL}/admin/coloridas' method='post' class='m-0 d-flex gap-2'>";
 
                             $token_seguro = htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8');
                             echo "<input type='hidden' name='csrf_token' value='{$token_seguro}'>";
-
                             echo "<input type='hidden' name='id_pedido' value='{$p['id']}'>";
-                            echo "<button type='submit' name='acao' value='aprovar' class='btn btn-sm btn-success fw-bold' {$bloquear_botao} onclick='return confirm(\"Aprovar a impressão deste documento?\")'><i class='bi bi-check-circle me-1'></i>Aprovar</button>";
-                            echo "<button type='submit' name='acao' value='rejeitar' class='btn btn-sm btn-danger' title='Negar pedido' onclick='return confirm(\"Rejeitar e apagar este arquivo?\")'><i class='bi bi-x-circle'></i></button>";
+
+                            echo "<button type='submit' name='acao' value='aprovar' class='btn btn-sm btn-success fw-bold shadow-sm' {$bloquear_botao} onclick='return confirm(\"Aprovar a impressão deste documento?\")'><i class='bi bi-check-circle me-1'></i>Aprovar</button>";
+                            echo "<button type='submit' name='acao' value='rejeitar' class='btn btn-sm btn-danger shadow-sm' title='Negar pedido' onclick='return confirm(\"Rejeitar e apagar este arquivo?\")'><i class='bi bi-x-circle'></i></button>";
                             echo "</form></div></td></tr>";
                         }
                     } else {
@@ -267,4 +299,96 @@ include __DIR__ . '/../core/layout/header.php';
     </div>
 </div>
 
+<div class="card shadow-sm border-0 border-top border-secondary border-4">
+
+    <div class="card-header bg-white py-3 d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+        <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-archive-fill me-2"></i>Histórico de Coloridas</h5>
+
+        <form action="<?php echo $BASE_URL; ?>/admin/coloridas" method="get" class="d-flex w-100" style="max-width: 380px;">
+            <div class="input-group input-group-sm shadow-sm">
+                <span class="input-group-text bg-white border-end-0 text-secondary"><i class="bi bi-search"></i></span>
+                <input type="text" name="busca" class="form-control border-start-0 ps-0" placeholder="Buscar usuário, arquivo..." value="<?php echo htmlspecialchars($busca); ?>">
+                <button type="submit" class="btn btn-secondary fw-bold px-3">Buscar</button>
+                <?php if ($busca != ''): ?>
+                    <a href="<?php echo $BASE_URL; ?>/admin/coloridas" class="btn btn-danger" title="Limpar Busca"><i class="bi bi-x-lg"></i></a>
+                <?php endif; ?>
+            </div>
+        </form>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-4">Data do Pedido</th>
+                    <th>Solicitante</th>
+                    <th>Documento</th>
+                    <th class="text-center">Total Impresso</th>
+                    <th class="text-center">Status</th>
+                    <th class="pe-4">Avaliador</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php
+                if ($historico->num_rows > 0):
+                    while ($h = $historico->fetch_assoc()):
+                        $badge_class = ($h['status'] == 'Aprovado') ? 'bg-success' : 'bg-danger';
+                        $total_folhas = $h['paginas'] * $h['copias'];
+                ?>
+                        <tr>
+                            <td class='ps-4 text-muted small'><?php echo $h['data_res']; ?></td>
+                            <td>
+                                <span class="fw-bold text-dark d-block"><i class='bi bi-person text-secondary me-1'></i><?php echo htmlspecialchars($h['usuario']); ?></span>
+                            </td>
+                            <td>
+                                <span class='text-truncate d-inline-block small text-muted' style='max-width: 250px;' title='<?php echo htmlspecialchars($h['arquivo_nome']); ?>'>
+                                    <i class='bi bi-file-earmark-pdf text-danger me-1'></i><?php echo htmlspecialchars($h['arquivo_nome']); ?>
+                                </span>
+                            </td>
+                            <td class='text-center small fw-bold'>
+                                <?php echo "{$h['paginas']} pág x {$h['copias']} cpy = {$total_folhas}"; ?>
+                            </td>
+                            <td class='text-center'>
+                                <span class='badge <?php echo $badge_class; ?> rounded-pill' style="font-size: 0.7rem;">
+                                    <?php echo htmlspecialchars($h['status']); ?>
+                                </span>
+                            </td>
+                            <td class='pe-4 small text-muted'><i class="bi bi-person-check me-1"></i><?php echo htmlspecialchars($h['aprovado_por'] ?? 'Sistema'); ?></td>
+                        </tr>
+                    <?php endwhile;
+                else: ?>
+                    <tr>
+                        <td colspan='6' class='text-center py-4 text-muted'>
+                            <?php echo ($busca != '') ? "Nenhum resultado encontrado para '<b>" . htmlspecialchars($busca) . "</b>'." : "O histórico está vazio."; ?>
+                        </td>
+                    </tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <?php if ($p_num_registros > $qtde_por_pagina): ?>
+        <div class="card-footer bg-white py-3 border-0">
+            <?php barra_de_paginas($p, $p_num_registros); ?>
+        </div>
+    <?php endif; ?>
+</div>
+
 <?php include __DIR__ . '/../core/layout/footer.php'; ?>
+
+<?php if ($busca != ''): ?>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const buscaTerm = encodeURIComponent('<?php echo $busca; ?>');
+            const linksPaginacao = document.querySelectorAll('.pagination a');
+
+            linksPaginacao.forEach(link => {
+                let href = link.getAttribute('href');
+                if (href && !href.includes('busca=')) {
+                    let separator = href.includes('?') ? '&' : '?';
+                    link.setAttribute('href', href + separator + 'busca=' + buscaTerm);
+                }
+            });
+        });
+    </script>
+<?php endif; ?>

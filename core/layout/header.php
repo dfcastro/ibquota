@@ -50,8 +50,7 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
             <a class="nav-link active" href="<?php echo $BASE_URL; ?>/"><i class="bi bi-house-door"></i> Início</a>
           </li>
 
-          <?php if ($nivel > 0) { ?>
-            <!-- MENU: GESTÃO E CADASTROS -->
+          <?php if ($nivel == 1 || $nivel == 2) { ?>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-folder2-open"></i> Cadastros</a>
               <ul class="dropdown-menu shadow-sm">
@@ -60,34 +59,35 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/grupos"><i class="bi bi-diagram-3 text-muted me-2"></i>Grupos</a></li>
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/mapeamento"><i class="bi bi-diagram-3-fill text-muted me-2"></i>Mapeamento do AD</a></li>
 
-                <?php if ($nivel >= 2) { ?>
+                <?php if ($nivel == 2) { ?>
                   <li>
                     <hr class="dropdown-divider">
                   </li>
                   <li class="dropdown-header small text-uppercase fw-bold">Infraestrutura</li>
-                  <!-- NOVAS OPÇÕES ADICIONADAS AQUI -->
                   <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/locais"><i class="bi bi-geo-alt text-muted me-2"></i>Locais/Setores</a></li>
                   <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/impressoras"><i class="bi bi-printer-fill text-muted me-2"></i>Setup de Impressoras</a></li>
                 <?php } ?>
               </ul>
             </li>
+          <?php } ?>
 
-            <!-- MENU: RELATÓRIOS -->
+          <?php if ($nivel > 0) { ?>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-bar-chart"></i> Relatórios</a>
               <ul class="dropdown-menu shadow-sm">
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/relatorio"><i class="bi bi-clock-history text-muted me-2"></i>Histórico Geral</a></li>
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/erros-cups"><i class="bi bi-exclamation-triangle text-muted me-2"></i>Impressões com Erro</a></li>
-                <li>
-                  <hr class="dropdown-divider">
-                </li>
-                <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/logs"><i class="bi bi-terminal text-muted me-2"></i>Logs do CUPS</a></li>
+                <?php if ($nivel == 2) { ?>
+                  <li>
+                    <hr class="dropdown-divider">
+                  </li>
+                  <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/logs"><i class="bi bi-terminal text-muted me-2"></i>Logs do CUPS</a></li>
+                <?php } ?>
               </ul>
             </li>
           <?php } ?>
 
-          <?php if ($nivel >= 2) { ?>
-            <!-- FILA COLORIDA E SOLICITAÇÕES (DESTAQUE) -->
+          <?php if ($nivel == 2 || $nivel == 3) { ?>
             <li class="nav-item ms-lg-2 border-start border-light ps-lg-2">
               <a class="nav-link text-warning fw-bold" href="<?php echo $BASE_URL; ?>/admin/coloridas"><i class="bi bi-palette-fill"></i> Fila Colorida</a>
             </li>
@@ -95,8 +95,9 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
             <li class="nav-item">
               <a class="nav-link text-info fw-bold" href="<?php echo $BASE_URL; ?>/admin/solicitacoes"><i class="bi bi-inbox-fill"></i> Pedidos</a>
             </li>
+          <?php } ?>
 
-            <!-- MENU: CONFIGURAÇÕES DE SISTEMA -->
+          <?php if ($nivel == 2) { ?>
             <li class="nav-item dropdown ms-lg-2 border-start border-light ps-lg-2">
               <a class="nav-link dropdown-toggle text-white" href="#" data-bs-toggle="dropdown"><i class="bi bi-gear"></i> Sistema</a>
               <ul class="dropdown-menu shadow-sm">
@@ -114,7 +115,9 @@ $nivel = isset($_SESSION['permissao']) ? (int)$_SESSION['permissao'] : 0;
                 <li><a class="dropdown-item" href="<?php echo $BASE_URL; ?>/admin/teste-ldap"><i class="bi bi-hdd-network text-muted me-2"></i>Teste LDAP</a></li>
               </ul>
             </li>
+          <?php } ?>
 
+          <?php if ($nivel > 0) { ?>
             <li class="nav-item">
               <a class="nav-link" href="<?php echo $BASE_URL; ?>/admin/documentacao"><i class="bi bi-book text-muted me-2"></i> Manual</a>
             </li>

@@ -19,9 +19,10 @@ $host_atual = $_SERVER['HTTP_HOST'] ?? '';
 $BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 // 1. Proteção: Apenas Admin (Nível 2)
-if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 2) {
-  header("Location: " . $BASE_URL . "/login");
-  exit();
+
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
+    header("Location: " . $BASE_URL . "/admin/dashboard?msg=acesso_negado");
+    exit();
 }
 
 if (isset($_GET['cod_adm_users'])) {

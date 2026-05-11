@@ -11,11 +11,11 @@ if (session_status() === PHP_SESSION_NONE) sec_session_start();
 $host_atual = $_SERVER['HTTP_HOST'] ?? '';
 $BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
-if (!isset($_SESSION['usuario']) || $_SESSION['permissao'] < 2) {
-    header("Location: " . $BASE_URL . "/login");
+// Bloqueia se NÃO for o NTI (Nível 2)
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
+    header("Location: " . $BASE_URL . "/admin/dashboard?msg=acesso_negado");
     exit();
 }
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ou_ad']) && isset($_POST['cod_grupo'])) {
     validar_csrf_token($_POST['csrf_token'] ?? '');
 

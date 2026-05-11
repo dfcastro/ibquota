@@ -11,10 +11,11 @@ if (session_status() === PHP_SESSION_NONE) {
   sec_session_start();
 }
 
-// Proteção: Apenas Admin (Nível 2) acessa a gestão de acessos
+
+// Bloqueia se NÃO for o NTI (Nível 2)
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
-  header("Location: /login");
-  exit();
+    header("Location: " . $BASE_URL . "/admin/dashboard?msg=acesso_negado");
+    exit();
 }
 
 include __DIR__ . '/../../core/layout/header.php';

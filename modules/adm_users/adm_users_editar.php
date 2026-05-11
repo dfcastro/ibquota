@@ -5,8 +5,8 @@
  * Editar Usuário Administrativo
  */
 
-include_once __DIR__ . '/../core/db.php';
-include_once __DIR__ . '/../core/functions.php';
+include_once __DIR__ . '/../../core/db.php';
+include_once __DIR__ . '/../../core/functions.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     sec_session_start();
@@ -19,11 +19,10 @@ $host_atual = $_SERVER['HTTP_HOST'] ?? '';
 $BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
 // 1. Proteção de página: Apenas Admins (Nível 2)
-if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 2) {
-    header("Location: " . $BASE_URL . "/login");
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] != 2) {
+    header("Location: " . $BASE_URL . "/admin/dashboard?msg=acesso_negado");
     exit();
 }
-
 $msg_erro = "";
 
 // ==========================================
@@ -51,16 +50,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cod_adm_users'], $_POS
     } else {
         // Se a senha foi preenchida, atualiza TUDO
         if (!empty($senha_nova)) {
-            $senha_hash = hash('sha512', $senha_nova);
+            // Usa o padrão moderno, forte e seguro do PHP (Bcrypt/Argon2)
+            $senha_hash = password_hash($senha_nova, PASSWORD_DEFAULT);
+
             $upd = $mysqli->prepare("UPDATE adm_users SET login = ?, nome = ?, email = ?, senha = ?, permissao = ? WHERE cod_adm_users = ?");
+
+            // 👉 ESTA LINHA NÃO PODE FALTAR! É ela que liga as variáveis aos "?"
             $upd->bind_param('ssssii', $login, $nome, $email, $senha_hash, $permissao, $cod_adm_users);
         }
         // Se a senha ficou em branco, mantém a antiga
         else {
             $upd = $mysqli->prepare("UPDATE adm_users SET login = ?, nome = ?, email = ?, permissao = ? WHERE cod_adm_users = ?");
+
+            //  ESTA LINHA TAMBÉM NÃO PODE FALTAR!
             $upd->bind_param('sssii', $login, $nome, $email, $permissao, $cod_adm_users);
         }
 
+        // A execução que estava dando erro na sua linha 64
         $upd->execute();
         $upd->close();
 
@@ -95,7 +101,7 @@ $stmt->bind_result($nome, $login, $email, $permissao_atual);
 $stmt->fetch();
 $stmt->close();
 
-include __DIR__ . '/../core/layout/header.php';
+include __DIR__ . '/../../core/layout/header.php';
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
@@ -166,4 +172,4 @@ include __DIR__ . '/../core/layout/header.php';
     </div>
 </div>
 
-<?php include __DIR__ . '/../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../../core/layout/footer.php'; ?>
