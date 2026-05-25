@@ -20,7 +20,6 @@ if (session_status() === PHP_SESSION_NONE) {
 $host_atual = $_SERVER['HTTP_HOST'] ?? '';
 $BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
 
-// Garante que o Token CSRF existe na sessão antes de carregar a página
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -35,9 +34,6 @@ $admin_logado = $_SESSION['usuario'];
 $msg = "";
 $tipo_msg = "";
 
-// ========================================================================
-// ⚙️ CONFIGURAÇÃO DE DIRETORES
-// ========================================================================
 $is_diretor = ($_SESSION['permissao'] == 3);
 
 // ========================================================================
@@ -51,7 +47,8 @@ if (isset($_GET['view'])) {
     $stmt_v->bind_result($path, $name);
 
     if ($stmt_v->fetch()) {
-        $caminho_real = __DIR__ . "/../public/" . $path;
+        // CORREÇÃO: Removido o "/public/" e ajustado o caminho relativo
+        $caminho_real = __DIR__ . "/../" . $path;
 
         if (file_exists($caminho_real)) {
             header('Content-Type: application/pdf');
@@ -60,7 +57,8 @@ if (isset($_GET['view'])) {
             exit();
         }
     }
-    die("Erro: Arquivo PDF não encontrado no servidor.");
+    // Debug amigável caso falte permissão na pasta
+    die("Erro: Arquivo PDF não encontrado. Caminho tentado: " . htmlspecialchars($caminho_real));
 }
 
 // ========================================================================
@@ -73,7 +71,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'], $_POST['id_ped
     $id_pedido = (int)$_POST['id_pedido'];
     $acao = $_POST['acao'];
 
-    // Busca dados do pedido
     $stmt_ped = $mysqli->prepare("SELECT usuario, arquivo_nome, arquivo_caminho, paginas, paginas_especificas, copias, impressora FROM pedidos_coloridos WHERE id = ? AND status = 'Pendente'");
     $stmt_ped->bind_param('i', $id_pedido);
     $stmt_ped->execute();
@@ -81,55 +78,58 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['acao'], $_POST['id_ped
 
     if ($row = $res_ped->fetch_assoc()) {
 
-        $caminho_real = __DIR__ . "/../public/" . $row['arquivo_caminho'];
+        // CORREÇÃO: Removido o "/public/" para alinhar com o salvamento do webprint
+        $caminho_real = __DIR__ . "/../" . $row['arquivo_caminho'];
         $total_paginas_pedido = $row['paginas'] * $row['copias'];
 
-        // --- CALCULA O CONSUMO MENSAL ATUAL ---
         $res_cota = $mysqli->query("SELECT SUM(paginas * copias) as total FROM pedidos_coloridos WHERE status = 'Aprovado' AND MONTH(data_pedido) = MONTH(CURRENT_DATE()) AND YEAR(data_pedido) = YEAR(CURRENT_DATE())");
         $total_consumido = $res_cota->fetch_assoc()['total'] ?? 0;
         $novo_total = $total_consumido + $total_paginas_pedido;
 
         if ($acao == 'aprovar') {
-            // Trava de Segurança das 500 Cotas
             if ($novo_total > 500 && !$is_diretor) {
                 $msg = "Aprovação Negada! Este pedido fará o campus ultrapassar as 500 cotas coloridas mensais. <b>Somente a Direção</b> pode liberar esta impressão.";
                 $tipo_msg = "danger";
             } else {
-                // APROVADO! Dispara para o CUPS
-                $cmd_impressora = escapeshellarg($row['impressora']);
-                $cmd_usuario = escapeshellarg($row['usuario']);
-                $cmd_titulo = escapeshellarg("Autorizado-" . $row['arquivo_nome']);
-                $cmd_arquivo = escapeshellarg(realpath($caminho_real));
+                if (file_exists($caminho_real)) {
+                    $cmd_impressora = escapeshellarg($row['impressora']);
+                    $cmd_usuario = escapeshellarg($row['usuario']);
+                    $cmd_titulo = escapeshellarg("Autorizado-" . $row['arquivo_nome']);
+                    $cmd_arquivo = escapeshellarg(realpath($caminho_real));
 
-                $paginas_alvo = $row['paginas_especificas'];
-                $cmd_page_ranges = !empty($paginas_alvo) ? "-o page-ranges=" . escapeshellarg($paginas_alvo) : "";
+                    $paginas_alvo = $row['paginas_especificas'];
+                    $cmd_page_ranges = !empty($paginas_alvo) ? "-o page-ranges=" . escapeshellarg($paginas_alvo) : "";
 
-                $comando = "lp -d {$cmd_impressora} -n {$row['copias']} {$cmd_page_ranges} -t {$cmd_titulo} -U {$cmd_usuario} {$cmd_arquivo} 2>&1";
-                $saida_shell = shell_exec($comando);
+                    // Comando LP disparado via sistema
+                    $comando = "lp -d {$cmd_impressora} -n {$row['copias']} {$cmd_page_ranges} -t {$cmd_titulo} -U {$cmd_usuario} {$cmd_arquivo} 2>&1";
+                    $saida_shell = shell_exec($comando);
 
-                if (strpos(strtolower($saida_shell), 'request id is') !== false || strpos(strtolower($saida_shell), 'id da requisição') !== false) {
-                    $upd = $mysqli->prepare("UPDATE pedidos_coloridos SET status = 'Aprovado', aprovado_por = ? WHERE id = ?");
-                    $upd->bind_param('si', $admin_logado, $id_pedido);
-                    $upd->execute();
+                    if (strpos(strtolower($saida_shell), 'request id is') !== false || strpos(strtolower($saida_shell), 'id da requisição') !== false) {
+                        $upd = $mysqli->prepare("UPDATE pedidos_coloridos SET status = 'Aprovado', aprovado_por = ? WHERE id = ?");
+                        $upd->bind_param('si', $admin_logado, $id_pedido);
+                        $upd->execute();
 
-                    @unlink($caminho_real); // Limpa o disco
+                        @unlink($caminho_real);
 
-                    $msg = "Impressão liberada! Apenas as páginas coloridas foram enviadas para a impressora.";
-                    $tipo_msg = "success";
+                        $msg = "Impressão liberada com sucesso!";
+                        $tipo_msg = "success";
+                    } else {
+                        $msg = "Erro no CUPS: <br><small>" . htmlspecialchars($saida_shell) . "</small>";
+                        $tipo_msg = "danger";
+                    }
                 } else {
-                    $msg = "Erro ao processar no servidor CUPS: <br><small>" . htmlspecialchars($saida_shell) . "</small>";
+                    $msg = "Erro Crítico: O arquivo físico desapareceu do servidor. Verifique as permissões da pasta uploads.";
                     $tipo_msg = "danger";
                 }
             }
         } elseif ($acao == 'rejeitar') {
-            // REJEITADO
             $upd = $mysqli->prepare("UPDATE pedidos_coloridos SET status = 'Rejeitado', aprovado_por = ? WHERE id = ?");
             $upd->bind_param('si', $admin_logado, $id_pedido);
             $upd->execute();
 
-            @unlink($caminho_real); // Limpa o disco
+            if (file_exists($caminho_real)) @unlink($caminho_real);
 
-            $msg = "Pedido rejeitado. O documento foi descartado.";
+            $msg = "Pedido rejeitado e arquivo excluído.";
             $tipo_msg = "warning";
         }
     }

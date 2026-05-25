@@ -33,7 +33,9 @@ if ($cod_politica === 0) {
 $msg = "";
 $tipo_msg = "";
 
+// ==========================================
 // AÇÃO 1: SALVAR CONFIGURAÇÕES BÁSICAS
+// ==========================================
 if (isset($_POST['acao']) && $_POST['acao'] == 'editar_politica') {
     $nome = trim($_POST['nome']);
     $quota_padrao = (int)$_POST['quota_padrao'];
@@ -47,7 +49,9 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'editar_politica') {
     $tipo_msg = "success";
 }
 
+// ==========================================
 // AÇÃO 2: SALVAR GRUPOS VINCULADOS
+// ==========================================
 if (isset($_POST['acao']) && $_POST['acao'] == 'salvar_grupos') {
     $del_grupos = $mysqli->prepare("DELETE FROM politica_grupo WHERE cod_politica = ?");
     $del_grupos->bind_param('i', $cod_politica);
@@ -66,10 +70,13 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'salvar_grupos') {
     $tipo_msg = "success";
 }
 
-// AÇÃO 3: ADICIONAR IMPRESSORA
+// ==========================================
+// AÇÃO 3: ADICIONAR IMPRESSORA (CORRIGIDA)
+// ==========================================
 if (isset($_POST['acao']) && $_POST['acao'] == 'add_impressora') {
     $impressora = trim($_POST['impressora']);
-    $peso = isset($_POST['peso']) ? (int)$_POST['peso'] : 1;
+    $peso = isset($_POST['peso']) ? (float)$_POST['peso'] : 1.0;
+    $prioridade = 1; // Valor obrigatório para evitar Erro 500 no MySQL
 
     $chk = $mysqli->prepare("SELECT cod_politica_impressora FROM politica_impressora WHERE cod_politica = ? AND impressora = ?");
     $chk->bind_param('is', $cod_politica, $impressora);
@@ -80,17 +87,25 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'add_impressora') {
         $msg = "Esta impressora já está vinculada a esta política!";
         $tipo_msg = "warning";
     } elseif (!empty($impressora)) {
-        $ins = $mysqli->prepare("INSERT INTO politica_impressora (cod_politica, impressora, peso) VALUES (?, ?, ?)");
-        $ins->bind_param('isi', $cod_politica, $impressora, $peso);
-        $ins->execute();
+        // Inclusão da coluna 'prioridade' que é obrigatória no seu banco
+        $ins = $mysqli->prepare("INSERT INTO politica_impressora (cod_politica, impressora, prioridade, peso) VALUES (?, ?, ?, ?)");
+        $ins->bind_param('isid', $cod_politica, $impressora, $prioridade, $peso);
+
+        if ($ins->execute()) {
+            $msg = "Impressora vinculada com sucesso!";
+            $tipo_msg = "success";
+        } else {
+            $msg = "Erro ao vincular: " . $mysqli->error;
+            $tipo_msg = "danger";
+        }
         $ins->close();
-        $msg = "Impressora vinculada com sucesso!";
-        $tipo_msg = "success";
     }
     $chk->close();
 }
 
+// ==========================================
 // AÇÃO 4: REMOVER IMPRESSORA
+// ==========================================
 if (isset($_POST['acao']) && $_POST['acao'] == 'del_impressora') {
     $cod_politica_impressora = (int)$_POST['cod_politica_impressora'];
     $del = $mysqli->prepare("DELETE FROM politica_impressora WHERE cod_politica_impressora = ? AND cod_politica = ?");
@@ -101,7 +116,9 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'del_impressora') {
     $tipo_msg = "success";
 }
 
-// BUSCA OS DADOS
+// ==========================================
+// BUSCA DADOS PARA EXIBIÇÃO
+// ==========================================
 $stmt = $mysqli->prepare("SELECT nome, quota_padrao, quota_infinita FROM politicas WHERE cod_politica = ?");
 $stmt->bind_param('i', $cod_politica);
 $stmt->execute();
@@ -145,7 +162,10 @@ include __DIR__ . '/../../core/layout/header.php';
 </div>
 
 <?php if ($msg != "") { ?>
-    <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible shadow-sm border-0"><i class="bi bi-info-circle-fill me-2"></i> <?php echo $msg; ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+    <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible shadow-sm border-0 animate__animated animate__fadeIn">
+        <i class="bi bi-info-circle-fill me-2"></i> <?php echo $msg; ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
 <?php } ?>
 
 <div class="row">
@@ -153,7 +173,7 @@ include __DIR__ . '/../../core/layout/header.php';
         <div class="card shadow-sm border-0 h-100">
             <div class="card-header bg-white fw-bold py-3"><i class="bi bi-sliders me-2 text-primary"></i>Regras Básicas</div>
             <div class="card-body bg-light">
-                <form action="<?php echo $BASE_URL; ?>/admin/politicas/gerenciar" method="post">
+                <form action="<?php echo $BASE_URL; ?>/admin/politicas/gerenciar?cod_politica=<?php echo $cod_politica; ?>" method="post">
                     <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                     <input type="hidden" name="cod_politica" value="<?php echo $cod_politica; ?>">
                     <input type="hidden" name="acao" value="editar_politica">
@@ -180,14 +200,14 @@ include __DIR__ . '/../../core/layout/header.php';
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-header bg-primary text-white fw-bold py-3"><i class="bi bi-diagram-3 me-2"></i>Grupos Obedecendo a Esta Regra</div>
             <div class="card-body">
-                <p class="text-muted small mb-3">Marque os grupos do campus que devem receber automaticamente as configurações desta política de impressão.</p>
+                <p class="text-muted small mb-3">Marque os grupos do campus que devem receber automaticamente as configurações desta política.</p>
 
-                <form action="<?php echo $BASE_URL; ?>/admin/politicas/gerenciar" method="post">
+                <form action="<?php echo $BASE_URL; ?>/admin/politicas/gerenciar?cod_politica=<?php echo $cod_politica; ?>" method="post">
                     <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                     <input type="hidden" name="cod_politica" value="<?php echo $cod_politica; ?>">
                     <input type="hidden" name="acao" value="salvar_grupos">
 
-                    <div class="row row-cols-1 row-cols-md-2 g-3 mb-4 max-h-300" style="max-height: 250px; overflow-y: auto; overflow-x: hidden;">
+                    <div class="row row-cols-1 row-cols-md-2 g-3 mb-4" style="max-height: 250px; overflow-y: auto; overflow-x: hidden;">
                         <?php
                         $res_grupos = $mysqli->query("SELECT grupo FROM grupos ORDER BY grupo");
                         if ($res_grupos->num_rows > 0) {
@@ -213,8 +233,8 @@ include __DIR__ . '/../../core/layout/header.php';
         </div>
 
         <div class="card shadow-sm border-0 border-top border-dark border-3">
-            <div class="card-header bg-white fw-bold py-3 d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-printer-fill me-2 text-dark"></i>Impressoras Permitidas</span>
+            <div class="card-header bg-white fw-bold py-3">
+                <i class="bi bi-printer-fill me-2 text-dark"></i>Impressoras Permitidas
             </div>
             <div class="card-body p-0">
                 <ul class="list-group list-group-flush border-0">
@@ -223,20 +243,20 @@ include __DIR__ . '/../../core/layout/header.php';
                     $stmt_imp->bind_param('i', $cod_politica);
                     $stmt_imp->execute();
                     $stmt_imp->store_result();
-                    $stmt_imp->bind_result($cod_politica_impressora, $impressora, $peso);
+                    $stmt_imp->bind_result($cod_id_vinc, $imp_nome, $imp_peso);
 
                     $tem_impressora = false;
                     while ($stmt_imp->fetch()) {
                         $tem_impressora = true;
                         echo "<li class='list-group-item d-flex justify-content-between align-items-center py-3 bg-light border-0 mb-1'>";
-                        echo "<div><span class='fw-bold text-dark d-block'>{$impressora}</span><small class='text-muted'>Peso de impressão: {$peso}</small></div>";
+                        echo "<div><span class='fw-bold text-dark d-block'>{$imp_nome}</span><small class='text-muted'>Peso de impressão: {$imp_peso}</small></div>";
 
-                        echo "<form action='{$BASE_URL}/admin/politicas/gerenciar' method='post' class='m-0'>";
+                        echo "<form action='{$BASE_URL}/admin/politicas/gerenciar?cod_politica={$cod_politica}' method='post' class='m-0'>";
                         echo "<input type='hidden' name='csrf_token' value='{$_SESSION['csrf_token']}'>";
                         echo "<input type='hidden' name='cod_politica' value='{$cod_politica}'>";
                         echo "<input type='hidden' name='acao' value='del_impressora'>";
-                        echo "<input type='hidden' name='cod_politica_impressora' value='{$cod_politica_impressora}'>";
-                        echo "<button type='submit' class='btn btn-outline-danger btn-sm shadow-sm' title='Remover Impressora' onclick='return confirm(\"Remover esta impressora da política?\")'><i class='bi bi-trash3'></i></button>";
+                        echo "<input type='hidden' name='cod_politica_impressora' value='{$cod_id_vinc}'>";
+                        echo "<button type='submit' class='btn btn-outline-danger btn-sm shadow-sm' onclick='return confirm(\"Remover esta impressora da política?\")'><i class='bi bi-trash3'></i></button>";
                         echo "</form>";
                         echo "</li>";
                     }
@@ -247,23 +267,23 @@ include __DIR__ . '/../../core/layout/header.php';
                     ?>
 
                     <li class="list-group-item py-3 border-top">
-                        <form action="<?php echo $BASE_URL; ?>/admin/politicas/gerenciar" method="post">
+                        <form action="<?php echo $BASE_URL; ?>/admin/politicas/gerenciar?cod_politica=<?php echo $cod_politica; ?>" method="post">
                             <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                             <input type="hidden" name="cod_politica" value="<?php echo $cod_politica; ?>">
                             <input type="hidden" name="acao" value="add_impressora">
                             <div class="input-group shadow-sm">
                                 <?php if (!empty($impressoras_servidor)) { ?>
                                     <select class="form-select border-dark" name="impressora" required>
-                                        <option value="" disabled selected>Escolha a impressora na rede...</option>
+                                        <option value="" disabled selected>Escolha a impressora no CUPS...</option>
                                         <?php foreach ($impressoras_servidor as $imp) { ?>
                                             <option value="<?php echo htmlspecialchars($imp); ?>"><?php echo htmlspecialchars($imp); ?></option>
                                         <?php } ?>
                                     </select>
                                 <?php } else { ?>
-                                    <input type="text" class="form-control border-dark" placeholder="Nome exato da Impressora no CUPS" name="impressora" required>
+                                    <input type="text" class="form-control border-dark" placeholder="Nome exato no CUPS" name="impressora" required>
                                 <?php } ?>
 
-                                <input type="number" class="form-control" placeholder="Peso" name="peso" value="1" min="1" style="max-width: 90px;" title="Peso por página">
+                                <input type="number" class="form-control" placeholder="Peso" name="peso" value="1" min="1" step="0.1" style="max-width: 90px;">
                                 <button type="submit" class="btn btn-dark text-white fw-bold"><i class="bi bi-plus-circle me-1"></i>Add</button>
                             </div>
                         </form>

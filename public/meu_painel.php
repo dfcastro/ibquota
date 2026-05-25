@@ -32,15 +32,16 @@ if (!isset($_SESSION['usuario'])) {
 
 $usuario_logado = $_SESSION['usuario'];
 
+// ==========================================
 // BUSCA DE DADOS DO USUÁRIO, POLÍTICA E SALDO
-// Só subtrai as páginas se o status for 1 (Sucesso)
+// ==========================================
 $query = "
     SELECT 
         u.cod_usuario,
         p.nome AS nome_politica,
-        IFNULL(qu.quota, p.quota_padrao) AS limite_real,
+        p.quota_padrao AS limite_padrao,
         p.quota_infinita,
-        (IFNULL(qu.quota, p.quota_padrao) - IFNULL((SELECT SUM(paginas) FROM impressoes WHERE usuario = u.usuario AND cod_status_impressao = 1), 0)) AS saldo_atual
+        IFNULL(qu.quota, p.quota_padrao) AS saldo_atual
     FROM usuarios u
     LEFT JOIN grupo_usuario gu ON u.cod_usuario = gu.cod_usuario
     LEFT JOIN grupos g ON gu.cod_grupo = g.cod_grupo
@@ -58,25 +59,42 @@ $stmt->bind_result($cod_usuario, $nome_politica, $limite_padrao, $quota_infinita
 $stmt->fetch();
 $stmt->close();
 
+// Caso o usuário não tenha política associada ainda
 if (empty($nome_politica)) {
-    $nome_politica = "Padrão (Pendente)";
-    $limite_padrao = 50;
-    $saldo_atual = 50;
+    $nome_politica = "Sem Política Atribuída";
+    $limite_padrao = 0;
+    $saldo_atual = 0;
     $quota_infinita = 0;
 }
 
+// Cálculo da Barra de Progresso
+// ==========================================
+// CÁLCULO INTELIGENTE DA BARRA DE PROGRESSO
+// ==========================================
 $percentual = 0;
 $cor_barra = "bg-success";
+$badge_extra = "";
 
 if ($quota_infinita == 1) {
     $percentual = 100;
 } elseif ($limite_padrao > 0) {
-    $percentual = ($saldo_atual / $limite_padrao) * 100;
-    if ($percentual < 0) $percentual = 0;
-    if ($percentual > 100) $percentual = 100;
+    // Se o saldo for maior que o limite da regra (Recebeu cota adicional!)
+    if ($saldo_atual > $limite_padrao) {
+        $percentual = 100; // Trava a barra visualmente em 100% para não "quebrar" o layout
+        $cor_barra = "bg-info text-dark"; // Muda a cor para indicar um bônus
+        $cota_extra = $saldo_atual - $limite_padrao;
+        $badge_extra = "<span class='badge bg-info text-dark ms-2 shadow-sm'>+{$cota_extra} Págs Extras</span>";
+    } else {
+        // Cálculo normal
+        $percentual = ($saldo_atual / $limite_padrao) * 100;
 
-    if ($percentual < 20) $cor_barra = "bg-danger";
-    elseif ($percentual < 50) $cor_barra = "bg-warning";
+        // Travas de segurança visual
+        if ($percentual < 0) $percentual = 0;
+
+        // Alertas de cor baseados na percentagem restante
+        if ($percentual < 20) $cor_barra = "bg-danger";
+        elseif ($percentual < 50) $cor_barra = "bg-warning";
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -153,14 +171,14 @@ if ($quota_infinita == 1) {
                         <?php if ($nome_politica == "Sem Política Atribuída") { ?>
                             <div class="display-3 text-danger mb-2"><i class="bi bi-exclamation-triangle"></i></div>
                             <h4 class="fw-bold text-dark">Usuário Bloqueado</h4>
-                            <p class="text-muted small">Você não possui cota de impressão.</p>
+                            <p class="text-muted small">Você não possui cota de impressão ou grupo definido.</p>
                         <?php } elseif ($quota_infinita == 1) { ?>
                             <div class="display-3 text-primary mb-2"><i class="bi bi-infinity"></i></div>
                             <h4 class="fw-bold text-dark">Impressão Ilimitada</h4>
-                            <p class="text-muted small">Política: <?php echo $nome_politica; ?></p>
+                            <p class="text-muted small">Política: <?php echo htmlspecialchars($nome_politica); ?></p>
                         <?php } else { ?>
                             <div class="display-1 fw-bold text-dark mb-0" id="saldo-tela"><?php echo (int)$saldo_atual; ?></div>
-                            <p class="text-muted mb-3">páginas restantes de <?php echo $limite_padrao; ?></p>
+                            <p class="text-muted mb-3">páginas restantes de <?php echo $limite_padrao; ?> <?php echo $badge_extra; ?></p>
 
                             <div class="progress mb-3" style="height: 25px;">
                                 <div class="progress-bar progress-bar-striped progress-bar-animated <?php echo $cor_barra; ?>" role="progressbar" style="width: <?php echo $percentual; ?>%;">
@@ -168,7 +186,7 @@ if ($quota_infinita == 1) {
                                 </div>
                             </div>
 
-                            <p class="small text-muted mb-4">Regra aplicada: <b><?php echo $nome_politica; ?></b></p>
+                            <p class="small text-muted mb-4">Regra aplicada: <b><?php echo htmlspecialchars($nome_politica); ?></b></p>
                             <a href="<?php echo $BASE_URL; ?>/solicitar-cota" class="btn btn-outline-success w-100 fw-bold shadow-sm" style="border-width: 2px;">
                                 <i class="bi bi-plus-circle me-2"></i>Solicitar Páginas Extras
                             </a>
@@ -196,7 +214,6 @@ if ($quota_infinita == 1) {
                 <span><i class="bi bi-activity text-primary me-2"></i> Últimas 10 Impressões</span>
                 <div>
                     <span class="badge bg-light text-secondary border me-2" id="status-conexao"><i class="bi bi-broadcast"></i> Conectando...</span>
-                    <!-- Nota: Garante que a rota meu-historico está mapeada no index.php principal -->
                     <a href="<?php echo $BASE_URL; ?>/meu-historico" class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i> Histórico Completo</a>
                 </div>
             </div>
@@ -207,7 +224,6 @@ if ($quota_infinita == 1) {
                     Sincronizando com as impressoras...
                 </div>
             </div>
-
         </div>
     </div>
     <?php include __DIR__ . '/../core/layout/footer.php'; ?>
@@ -216,7 +232,6 @@ if ($quota_infinita == 1) {
     <script>
         function buscarStatusTempoReal() {
             // URL Absoluta baseada no ambiente
-
             fetch('<?php echo $BASE_URL; ?>/ajax/status')
                 .then(response => response.json())
                 .then(data => {

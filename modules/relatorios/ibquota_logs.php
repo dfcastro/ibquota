@@ -2,12 +2,12 @@
 
 /**
  * IBQUOTA 3
- * Relatório de Logs do Sistema (CUPS/Backend) - Refatorado
+ * Relatório de Logs do Sistema (CUPS/Backend)
  */
 include_once __DIR__ . '/../../core/db.php';
-include_once __DIR__.'/../../core/functions.php';
+include_once __DIR__ . '/../../core/functions.php';
 if (session_status() === PHP_SESSION_NONE) {
-    sec_session_start();
+   sec_session_start();
 }
 
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION['permissao'] < 1) {
@@ -17,8 +17,8 @@ if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION[
 
 include __DIR__ . '/../../core/layout/header.php';
 
-// Busca os últimos 500 logs RELEVANTES[cite: 4]
-$query = "SELECT id, mensagem, DATE_FORMAT(datahora, '%d/%m/%Y %H:%i') as datahora 
+// Busca os últimos 500 logs direto do Banco de Dados (Seguro contra bloqueios do Linux)
+$query = "SELECT id, mensagem, DATE_FORMAT(datahora, '%d/%m/%Y %H:%i:%s') as datahora 
           FROM log_ibquota 
           WHERE TRIM(mensagem) != 'IBQUOTA started.' 
           ORDER BY id DESC LIMIT 500";
@@ -31,7 +31,7 @@ $resultado = $mysqli->query($query);
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2 border-bottom border-light pb-3">
    <div>
       <h3 class="fw-bold text-dark mb-0"><i class="bi bi-terminal text-dark me-2"></i> Logs do Backend (CUPS)</h3>
-      <p class="text-muted mb-0 small">Registo de eventos do sistema e erros de comunicação com o daemon.</p>
+      <p class="text-muted mb-0 small">Registo em tempo real das ações e erros do motor IBQUOTA3.</p>
    </div>
 </div>
 
@@ -42,20 +42,37 @@ $resultado = $mysqli->query($query);
             <thead class="table-dark">
                <tr>
                   <th style="width: 200px;">Data e Hora</th>
+                  <th style="width: 120px;">ID do Job</th>
                   <th>Mensagem do Sistema</th>
                </tr>
             </thead>
             <tbody>
                <?php
                while ($log = $resultado->fetch_assoc()) {
-                  $mensagem = htmlspecialchars(utf8_decode($log['mensagem']));
-                  // NOVIDADE: Adicionadas as palavras "bloqueio" e "offline" geradas pelo Perl[cite: 4]
-                  if (stripos($mensagem, 'erro') !== false || stripos($mensagem, 'fail') !== false || stripos($mensagem, 'bloqueio') !== false || stripos($mensagem, 'offline') !== false) {
+                  $datahora = $log['datahora'];
+                  $mensagem_raw = htmlspecialchars($log['mensagem']);
+
+                  $job_id = "-";
+                  $mensagem = $mensagem_raw;
+
+                  // Extrai o Job ID se o motor enviar no formato "Job[1234] - Mensagem"
+                  if (preg_match('/^(Job\[\d+\]) - (.*)$/', $mensagem_raw, $matches)) {
+                     $job_id = $matches[1];
+                     $mensagem = $matches[2];
+                  }
+
+                  // Destaques visuais
+                  if (stripos($mensagem, 'erro') !== false || stripos($mensagem, 'bloqueado') !== false || stripos($mensagem, 'falha') !== false) {
                      $mensagem = "<span class='text-danger fw-bold'><i class='bi bi-x-circle me-1'></i>{$mensagem}</span>";
+                  } elseif (stripos($mensagem, 'sucesso') !== false || stripos($mensagem, 'DEBUG SUCESSO') !== false) {
+                     $mensagem = "<span class='text-success fw-bold'><i class='bi bi-check-circle me-1'></i>{$mensagem}</span>";
+                  } elseif (stripos($mensagem, 'DEBUG') !== false) {
+                     $mensagem = "<span class='text-secondary'><i class='bi bi-search me-1'></i>{$mensagem}</span>";
                   }
 
                   echo "<tr>";
-                  echo "<td><i class='bi bi-clock me-1 text-muted'></i> {$log['datahora']}</td>";
+                  echo "<td><i class='bi bi-clock me-1 text-muted'></i> {$datahora}</td>";
+                  echo "<td><span class='badge bg-light text-dark border'>{$job_id}</span></td>";
                   echo "<td>{$mensagem}</td>";
                   echo "</tr>\n";
                }
@@ -66,7 +83,7 @@ $resultado = $mysqli->query($query);
    </div>
 </div>
 
-<?php include __DIR__.'/../../core/layout/footer.php'; ?>
+<?php include __DIR__ . '/../../core/layout/footer.php'; ?>
 
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
@@ -81,16 +98,15 @@ $resultado = $mysqli->query($query);
          language: {
             url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/pt-BR.json'
          },
-         pageLength: 25,
+         pageLength: 50,
          dom: '<"row mb-3"<"col-md-6"B><"col-md-6 text-end"f>>rt<"row mt-3"<"col-md-6"i><"col-md-6"p>>',
          buttons: [{
             extend: 'excelHtml5',
             className: 'btn btn-sm btn-success shadow-sm',
-            text: '<i class="bi bi-file-earmark-excel"></i> Exportar Logs'
+            text: '<i class="bi bi-file-earmark-excel"></i> Exportar Logs',
+            filename: 'Logs_Motor_IBQUOTA'
          }],
-         order: [
-            [0, 'desc']
-         ]
+         ordering: false // Os dados já vêm ordenados (DESC) perfeitamente do Banco
       });
    });
 </script>

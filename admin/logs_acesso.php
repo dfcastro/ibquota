@@ -21,6 +21,7 @@ if (!isset($_SESSION['usuario']) || !isset($_SESSION['permissao']) || $_SESSION[
     header("Location: " . $BASE_URL . "/admin/dashboard?msg=acesso_negado");
     exit();
 }
+
 // Filtro rápido para exibir apenas falhas
 $mostrar_apenas_falhas = isset($_GET['falhas']) ? true : false;
 $filtro_sql = $mostrar_apenas_falhas ? "WHERE status != 'Sucesso'" : "";
@@ -35,23 +36,23 @@ include __DIR__ . '/../core/layout/header.php';
     </div>
     <div>
         <?php if ($mostrar_apenas_falhas) { ?>
-            <a href="<?php echo $BASE_URL; ?>/admin/auditoria" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-list-check me-1"></i> Ver Todos</a>
+            <a href="<?php echo $BASE_URL; ?>/admin/auditoria" class="btn btn-outline-secondary shadow-sm fw-bold"><i class="bi bi-list-check me-1"></i> Ver Todos</a>
         <?php } else { ?>
-            <a href="<?php echo $BASE_URL; ?>/admin/auditoria?falhas=1" class="btn btn-outline-danger shadow-sm"><i class="bi bi-exclamation-octagon me-1"></i> Apenas Falhas</a>
+            <a href="<?php echo $BASE_URL; ?>/admin/auditoria?falhas=1" class="btn btn-outline-danger shadow-sm fw-bold"><i class="bi bi-exclamation-octagon-fill me-1"></i> Apenas Falhas</a>
         <?php } ?>
     </div>
 </div>
 
-<div class="card shadow-sm border-0 border-top border-danger border-4">
+<div class="card shadow-sm border-0 border-top border-danger border-4 mb-5">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 text-sm">
             <thead class="table-light">
                 <tr>
-                    <th class="ps-4">Data / Hora</th>
-                    <th>Usuário Tentado</th>
-                    <th>Status</th>
-                    <th>Endereço IP</th>
-                    <th>Dispositivo (Navegador)</th>
+                    <th class="ps-4 py-3">Data / Hora</th>
+                    <th class="py-3">Usuário Tentado</th>
+                    <th class="py-3">Status</th>
+                    <th class="py-3">Endereço IP</th>
+                    <th class="py-3">Dispositivo (Navegador)</th>
                 </tr>
             </thead>
             <tbody>
@@ -62,23 +63,31 @@ include __DIR__ . '/../core/layout/header.php';
 
                 if ($res->num_rows > 0) {
                     while ($log = $res->fetch_assoc()) {
-                        $is_sucesso = ($log['status'] == 'Sucesso');
-                        $badge_cor = $is_sucesso ? 'success' : 'danger';
-                        $icone = $is_sucesso ? 'bi-check-circle' : 'bi-x-octagon';
+                        
+                        // Lógica Refinada das Badges
+                        $status_txt = htmlspecialchars($log['status']);
+                        if ($status_txt == 'Sucesso') {
+                            $badge = "<span class='badge bg-success rounded-pill px-3 py-2 shadow-sm'><i class='bi bi-check-circle-fill me-1'></i> Sucesso</span>";
+                        } elseif (strpos(strtolower($status_txt), 'falha') !== false || strpos(strtolower($status_txt), 'erro') !== false || strpos(strtolower($status_txt), 'incorreta') !== false) {
+                            $badge = "<span class='badge bg-danger rounded-pill px-3 py-2 shadow-sm'><i class='bi bi-x-circle-fill me-1'></i> {$status_txt}</span>";
+                        } else {
+                            $badge = "<span class='badge bg-warning text-dark rounded-pill px-3 py-2 shadow-sm'><i class='bi bi-exclamation-triangle-fill me-1'></i> {$status_txt}</span>";
+                        }
 
-                        // Extrai navegador simplificado para não quebrar a tela
-                        $nav_curto = substr($log['user_agent'], 0, 40) . "...";
+                        // Extrai navegador simplificado com segurança
+                        $user_agent_completo = $log['user_agent'] ?? 'Desconhecido';
+                        $nav_curto = strlen($user_agent_completo) > 40 ? substr($user_agent_completo, 0, 40) . "..." : $user_agent_completo;
 
                         echo "<tr>";
                         echo "<td class='ps-4 text-muted font-monospace small'>{$log['data_br']}</td>";
-                        echo "<td class='fw-bold'>" . htmlspecialchars($log['usuario']) . "</td>";
-                        echo "<td><span class='badge bg-{$badge_cor} bg-opacity-10 text-{$badge_cor} border border-{$badge_cor} rounded-pill'><i class='bi {$icone} me-1'></i>{$log['status']}</span></td>";
-                        echo "<td class='font-monospace text-muted'>{$log['ip']}</td>";
-                        echo "<td title='" . htmlspecialchars($log['user_agent']) . "' class='text-muted small'>" . htmlspecialchars($nav_curto) . "</td>";
+                        echo "<td class='fw-bold text-dark'>" . htmlspecialchars($log['usuario']) . "</td>";
+                        echo "<td>{$badge}</td>";
+                        echo "<td><span class='badge bg-light text-dark border font-monospace px-2 py-1'>" . htmlspecialchars($log['ip']) . "</span></td>";
+                        echo "<td title='" . htmlspecialchars($user_agent_completo) . "' class='text-muted small'>" . htmlspecialchars($nav_curto) . "</td>";
                         echo "</tr>";
                     }
                 } else {
-                    echo "<tr><td colspan='5' class='text-center py-5 text-muted'>Nenhum registro encontrado.</td></tr>";
+                    echo "<tr><td colspan='5' class='text-center py-5 text-muted'><i class='bi bi-inbox fs-2 d-block mb-2 text-light'></i>Nenhum registro de acesso encontrado.</td></tr>";
                 }
                 ?>
             </tbody>

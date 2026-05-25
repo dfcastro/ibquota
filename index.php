@@ -175,7 +175,7 @@ if (array_key_exists($url, $rotas)) {
     http_response_code(404);
     echo "<div style='font-family: sans-serif; padding: 40px; text-align: center;'>";
     echo "<h1 style='color: #dc3545;'>Erro 404 - Página Não Encontrada</h1>";
-    echo "<p>O sistema tentou aceder a uma rota que não existe no dicionário.</p>";
+    echo "<p>O sistema tentou acessar a uma rota que não existe no dicionário.</p>";
 
     echo "<div style='background: #f8f9fa; padding: 15px; border-radius: 8px; display: inline-block;'>";
     echo "A URL capturada pelo sistema foi: <strong>'{$url}'</strong>";

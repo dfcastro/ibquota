@@ -7,7 +7,7 @@ include_once __DIR__ . '/../../core/db.php';
 include_once __DIR__ . '/../../core/functions.php';
 
 if (session_status() === PHP_SESSION_NONE) {
-    sec_session_start();
+   sec_session_start();
 }
 
 $host_atual = $_SERVER['HTTP_HOST'] ?? '';
@@ -31,8 +31,9 @@ $params = [];
 $types = "";
 
 if ($filtro_usuario != '') {
-   $query .= " AND usuario = ? ";
-   $params[] = $filtro_usuario;
+   // Busca flexível: encontra o usuário mesmo se ele tiver domínio associado
+   $query .= " AND usuario LIKE ? ";
+   $params[] = '%' . $filtro_usuario . '%';
    $types .= "s";
 }
 if ($data_inicial != '' && $data_final != '') {
@@ -47,7 +48,7 @@ if ($filtro_status != '') {
    $types .= "i";
 }
 
-$query .= " ORDER BY cod_impressoes DESC LIMIT 1000";
+$query .= " ORDER BY data_impressao DESC, hora_impressao DESC LIMIT 1000";
 
 $stmt = $mysqli->prepare($query);
 if ($types != "") {
@@ -70,7 +71,7 @@ include __DIR__ . '/../../core/layout/header.php';
    </div>
    <div>
       <a href="<?php echo $BASE_URL; ?>/admin/dashboard" class="btn btn-outline-secondary shadow-sm fw-bold">
-          <i class="bi bi-arrow-left me-1"></i> Voltar
+         <i class="bi bi-arrow-left me-1"></i> Voltar
       </a>
    </div>
 </div>
@@ -176,14 +177,18 @@ include __DIR__ . '/../../core/layout/header.php';
                            $icone = 'bi-printer-fill';
                         }
                      }
-                     
-                     // Ajuste para PHP 8.x: mb_convert_encoding é mais seguro que utf8_decode
+
+                     // Extrai apenas o utilizador caso tenha domínio (ex: IFNMG\daniel -> daniel)
+                     $partes_usuario = explode('\\', $usuario);
+                     $usuario_limpo = end($partes_usuario);
+
+                     // Ajuste para PHP 8.x
                      $doc_seguro = htmlspecialchars(mb_convert_encoding($nome_documento, 'UTF-8', 'auto'));
 
                      echo "<tr>";
                      echo "<td><span class='text-muted small'>#{$job_id}</span></td>";
                      echo "<td><i class='bi bi-calendar3 me-1 text-muted small'></i> <span class='d-none'>" . date('Ymd', strtotime(str_replace('/', '-', $data_impressao))) . "</span>{$data_impressao} <span class='text-muted small ms-1'>{$hora_impressao}</span></td>";
-                     echo "<td class='fw-bold text-dark'>{$usuario}</td>";
+                     echo "<td class='fw-bold text-dark'>{$usuario_limpo}</td>";
                      echo "<td>{$impressora}</td>";
                      echo "<td><span class='badge bg-light text-secondary border font-monospace'>{$estacao}</span></td>";
                      echo "<td><span class='small text-truncate d-inline-block' style='max-width: 200px;' title='{$doc_seguro}'>{$doc_seguro}</span></td>";
@@ -217,7 +222,6 @@ include __DIR__ . '/../../core/layout/header.php';
 
 <?php include __DIR__ . '/../../core/layout/footer.php'; ?>
 
-<!-- Scripts do DataTables para Exportação -->
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
@@ -253,13 +257,7 @@ include __DIR__ . '/../../core/layout/header.php';
                text: '<i class="bi bi-printer"></i> Imprimir'
             }
          ],
-         order: [
-            [1, 'desc'] // Ordena pela Data e Hora
-         ],
-         columnDefs: [{
-            orderable: false,
-            targets: 5 // O documento geralmente não precisa de ordenação e atrapalha
-         }]
+         ordering: false // O PHP já entrega ordenado perfeitamente da data mais nova para a mais velha
       });
    });
 </script>

@@ -15,14 +15,15 @@ define('QTDE_POR_PAGINA', 20);
 
 // Abre o ficheiro core/functions.php e substitui a tua função sec_session_start por esta:
 
-function sec_session_start() {
+function sec_session_start()
+{
     $session_name = 'sec_session_id';   // Atribui um nome de sessão personalizado
     $secure = false; // Em localhost (HTTP) deve ser false. Em Produção (HTTPS) muda para true.
     $httponly = true; // Impede que o JavaScript aceda ao id da sessão (Proteção contra XSS)
 
     // 1. Verifica se a sessão já foi iniciada em algum outro lugar (ex: header.php ou db.php)
     if (session_status() === PHP_SESSION_NONE) {
-        
+
         // 2. Tenta forçar o uso exclusivo de cookies para as sessões
         if (ini_set('session.use_only_cookies', 1) === FALSE) {
             // Em vez de redirecionar para um 'error.php' cego, mostramos o erro diretamente de forma elegante
@@ -358,4 +359,161 @@ function validar_csrf_token($token_recebido)
         die("ERRO CRÍTICO DE SEGURANÇA: Token CSRF inválido ou ausente. Ação bloqueada para proteger o sistema.");
     }
     return true;
+}
+
+// ==========================================
+// FUNÇÃO GLOBAL DE ENVIO DE E-MAIL (PHPMailer)
+// ==========================================
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+function enviar_email_sistema($destinatarios, $assunto, $mensagem_html, $mensagem_texto = "")
+{
+
+    if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+        require_once __DIR__ . '/PHPMailer/Exception.php';
+        require_once __DIR__ . '/PHPMailer/PHPMailer.php';
+        require_once __DIR__ . '/PHPMailer/SMTP.php';
+    }
+
+    $env_path = __DIR__ . '/../.env';
+    if (!file_exists($env_path)) return false;
+
+    $env = parse_ini_file($env_path);
+    $mail = new PHPMailer(true);
+
+    try {
+        $mail->isSMTP();
+        $mail->Host       = $env['SMTP_HOST'];
+        $mail->SMTPAuth   = true;
+        $mail->Username   = $env['SMTP_USER'];
+        $mail->Password   = $env['SMTP_PASS'];
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = $env['SMTP_PORT'];
+        $mail->CharSet    = 'UTF-8';
+
+        $mail->setFrom($env['SMTP_FROM'], 'Sistema IFQUOTA');
+        $mail->addReplyTo($env['SMTP_REPLYTO'], 'TI Campus Almenara');
+
+        // MÁGICA DOS MÚLTIPLOS DESTINATÁRIOS
+        if (is_array($destinatarios)) {
+            foreach ($destinatarios as $email) {
+                $mail->addAddress($email);
+            }
+        } else {
+            $mail->addAddress($destinatarios);
+        }
+
+        $caminhos_possiveis = [
+            __DIR__ . '/../assets/img/logo_almenara.jpg',
+            __DIR__ . '/../public/assets/img/logo_almenara.jpg',
+            $_SERVER['DOCUMENT_ROOT'] . '/gg/assets/img/logo_almenara.jpg',
+            $_SERVER['DOCUMENT_ROOT'] . '/assets/img/logo_almenara.jpg'
+        ];
+
+        $logo_encontrada = false;
+        foreach ($caminhos_possiveis as $caminho) {
+            if (file_exists($caminho)) {
+                // Pega a imagem física e joga para dentro do e-mail (Inline Attachment)
+                $mail->addEmbeddedImage($caminho, 'logo_campus');
+                $logo_encontrada = true;
+                break; // Achou a imagem? Para de procurar e continua o código!
+            }
+        }
+
+        // Apenas para registrar no log do servidor caso a imagem seja apagada no futuro
+        if (!$logo_encontrada) {
+            error_log("IFQUOTA Mailer Aviso: A logo não foi encontrada em nenhum diretorio.");
+        }
+
+        $mail->isHTML(true);
+        $mail->Subject = $assunto;
+        $mail->Body    = $mensagem_html;
+        $mail->AltBody = empty($mensagem_texto) ? strip_tags($mensagem_html) : $mensagem_texto;
+
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log("IFQUOTA Mailer Error: {$mail->ErrorInfo}");
+        return false;
+    }
+}
+
+function disparar_alerta_gestor($tipo_alerta, $usuario, $detalhe1, $detalhe2)
+{
+    global $mysqli; // Puxa a conexão com o banco de dados
+
+    $link_painel_admin = "http://ifquota.almenara.ifnmg.edu.br/admin/dashboard";
+
+    if ($tipo_alerta == 'colorida') {
+        $nivel_alvo = 3; // 3 = Direção
+        $assunto = "🖨️ Nova Fila: Pedido de Impressão Colorida";
+        $titulo_box = "Documento Aguardando Aprovação";
+        $lbl1 = "Arquivo";
+        $lbl2 = "Total de Páginas";
+        $cor_tema = "#3498db"; // Azul
+    } else {
+        $nivel_alvo = 2; // 2 = NTI
+        $assunto = "⚠️ Solicitação de Cota Adicional";
+        $titulo_box = "Pedido de Páginas Extras";
+        $lbl1 = "Quantidade Solicitada";
+        $lbl2 = "Motivo do Pedido";
+        $cor_tema = "#f39c12"; // Laranja
+    }
+
+    // BUSCA DINÂMICA DE E-MAILS NO BANCO
+    // Procura usuários com o nível correto e que tenham preenchido a coluna 'email'
+    $stmt = $mysqli->prepare("SELECT email FROM adm_users WHERE permissao = ? AND email IS NOT NULL AND email != ''");
+    $stmt->bind_param('i', $nivel_alvo);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $lista_emails = [];
+    while ($row = $res->fetch_assoc()) {
+        // Valida se o que foi digitado no cadastro é realmente um formato de e-mail
+        if (filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
+            $lista_emails[] = $row['email'];
+        }
+    }
+    $stmt->close();
+
+    // Se não houver ninguém cadastrado com e-mail para receber esse alerta, ele cancela silenciosamente
+    if (empty($lista_emails)) {
+        return false;
+    }
+
+    // MONTA O HTML DO E-MAIL
+    $html = "
+    <!DOCTYPE html>
+    <html>
+    <body style='font-family: Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px;'>
+        <div style='max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e0e0e0;'>
+            
+            <div style='background-color: #ffffff; padding: 20px; text-align: center; border-bottom: 3px solid {$cor_tema};'>
+                <img src='cid:logo_campus' alt='IFNMG' style='height: 100px; max-width: 100%; display: block; margin: 0 auto;'>
+            </div>
+            
+            <div style='padding: 30px;'>
+                <h2 style='color: #2c3e50; margin-top: 0; font-size: 20px;'>Notificação do Sistema IFQUOTA</h2>
+                <p style='color: #555555; font-size: 16px; line-height: 1.6;'>O usuário <strong>{$usuario}</strong> acabou de realizar um novo pedido no portal.</p>
+                
+                <div style='background-color: #f8f9fa; border-left: 5px solid {$cor_tema}; padding: 18px; margin: 25px 0; border-radius: 0 4px 4px 0;'>
+                    <h3 style='margin-top: 0; font-size: 16px; color: {$cor_tema};'>{$titulo_box}</h3>
+                    <p style='margin: 0 0 10px 0; color: #2c3e50; font-size: 14px;'><b>{$lbl1}:</b> <span style='color: #555;'>{$detalhe1}</span></p>
+                    <p style='margin: 0; color: #2c3e50; font-size: 14px;'><b>{$lbl2}:</b> <span style='color: #555;'>{$detalhe2}</span></p>
+                </div>
+                
+                <p style='color: #555555; font-size: 16px; line-height: 1.6;'>Acesse o painel administrativo para analisar e aprovar/negar a solicitação.</p>
+                
+                <div style='text-align: center; margin-top: 35px; margin-bottom: 10px;'>
+                    <a href='{$link_painel_admin}' style='background-color: {$cor_tema}; color: #ffffff; text-decoration: none; padding: 14px 30px; border-radius: 5px; font-weight: bold; font-size: 16px; display: inline-block;'>Acessar Painel Admin</a>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    ";
+
+    // Envia o e-mail passando a lista de destinatários dinâmicos!
+    return enviar_email_sistema($lista_emails, $assunto, $html);
 }

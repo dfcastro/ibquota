@@ -3,6 +3,7 @@
 /**
  * IBQUOTA 3 - WEB PRINT (Impressão sem Fios via CUPS)
  * 100% DINÂMICO: Lê locais e configurações de cor direto do Banco de Dados
+ * CORREÇÃO: Sincronia perfeita de Job ID e Alta Transparência de Status
  */
 
 include_once __DIR__ . '/../core/db.php';
@@ -34,6 +35,7 @@ if (!isset($_SESSION['usuario'])) {
 $usuario_logado = $_SESSION['usuario'];
 $msg = "";
 $tipo_msg = "";
+$job_id_esperado = ""; // Variável nova para rastrear o serviço exato!
 
 // ======================================================================
 // 1. BUSCA INTELIGENTE: IMPRESSORAS, LOCAIS E CONFIG DE COR
@@ -61,7 +63,7 @@ $result_imp = $stmt_imp->get_result();
 
 $impressoras_permitidas = [];
 $impressoras_agrupadas = [];
-$config_hardware = []; // Guarda se a impressora é colorida (1 ou 0)
+$config_hardware = [];
 
 while ($row = $result_imp->fetch_assoc()) {
     $nome_imp = $row['impressora'];
@@ -72,7 +74,6 @@ while ($row = $result_imp->fetch_assoc()) {
     $config_hardware[$nome_imp] = (int)$row['is_colorida'];
 }
 $stmt_imp->close();
-
 
 // ======================================================================
 // 2. PROCESSA O ENVIO DO ARQUIVO
@@ -144,12 +145,11 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
             $tipo_msg = "warning";
         } else {
 
-            // A MÁGICA ACONTECE AQUI: Lemos do banco se a impressora escolhida é colorida
             $eh_colorida = isset($config_hardware[$impressora_escolhida]) && $config_hardware[$impressora_escolhida] === 1;
 
             if ($eh_colorida) {
                 // ==========================================
-                // IMPRESSÃO COLORIDA (RAIO-X + FILA/AUTO)
+                // IMPRESSÃO COLORIDA
                 // ==========================================
                 $nome_limpo = preg_replace('/[^a-zA-Z0-9.\-_]/', '_', $nome_original);
                 $novo_nome = "REQ_" . time() . "_" . $nome_limpo;
@@ -160,7 +160,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                 }
 
                 if (move_uploaded_file($caminho_temporario, $destino_final)) {
-
                     $cmd_gs = "gs -q -o - -sDEVICE=inkcov " . escapeshellarg($destino_final);
                     $output_gs = shell_exec($cmd_gs);
                     $linhas_gs = explode("\n", trim($output_gs));
@@ -215,16 +214,20 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                             $comando_ranges = "-o page-ranges=" . escapeshellarg($string_paginas_finais);
                             $cmd_impressora = escapeshellarg($impressora_escolhida);
                             $cmd_usuario = escapeshellarg($usuario_logado);
-                            $cmd_titulo = escapeshellarg("AutoColor-" . $nome_original);
+                            $cmd_titulo = escapeshellarg("AutoColor (" . $copias . " Cópias) - " . $nome_original);
                             $cmd_lados = escapeshellarg($lados);
                             $cmd_arquivo = escapeshellarg(realpath($destino_final));
 
                             $comando = "lp -d {$cmd_impressora} -n {$copias} -o sides={$cmd_lados} {$orientacao} {$ajustar} {$comando_ranges} -t {$cmd_titulo} -U {$cmd_usuario} {$cmd_arquivo} 2>&1";
-                            shell_exec($comando);
+                            $saida_shell = shell_exec($comando);
 
                             @unlink($destino_final);
 
-                            $msg = "<b>Aprovado Automaticamente!</b><br>As páginas coloridas ({$string_paginas_finais}) foram enviadas diretamente para a impressora. <br><small>(O Campus ainda possui cota colorida este mês).</small>";
+                            if (preg_match('/(?:request id is|id da requisição [eé])\s+[^\s]+\-([0-9]+)/i', $saida_shell, $matches)) {
+                                $job_id_esperado = $matches[1];
+                            }
+
+                            $msg = "<b>Aprovado Automaticamente!</b><br>As páginas coloridas foram enviadas para a impressora.";
                             $tipo_msg = "success";
                         } else {
                             $stmt_ped = $mysqli->prepare("INSERT INTO pedidos_coloridos (usuario, arquivo_nome, arquivo_caminho, paginas, paginas_especificas, copias, impressora) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -232,14 +235,13 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                             $stmt_ped->execute();
                             $stmt_ped->close();
 
+                            disparar_alerta_gestor('colorida', $usuario_logado, $nome_original, $qtd_final . " página(s)");
+
                             if ($consumo_previsto > 500) {
-                                $msg = "O Campus atingiu o limite mensal de 500 páginas coloridas. Seu documento foi para a fila da <b>Direção Geral</b>.";
+                                $msg = "O Campus atingiu o limite mensal. Documento na fila da <b>Direção Geral</b>.";
                                 $tipo_msg = "warning";
-                            } elseif ($qtd_final == $qtd_desejada) {
-                                $msg = "Seu documento colorido foi para a fila de aprovação do NTI. <br><small>Páginas solicitadas: <b>{$string_paginas_finais}</b></small>";
-                                $tipo_msg = "success";
                             } else {
-                                $msg = "<b>Economia Inteligente!</b> Selecionadas {$qtd_desejada} página(s), descartadas as P&B. <b>Apenas {$qtd_final} página(s)</b> ({$string_paginas_finais}) foram para a fila de aprovação do NTI!";
+                                $msg = "Documento colorido na fila de aprovação do NTI. <br><small>Páginas solicitadas: <b>{$string_paginas_finais}</b></small>";
                                 $tipo_msg = "success";
                             }
                         }
@@ -256,16 +258,26 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
                 $cmd_impressora = escapeshellarg($impressora_escolhida);
                 $cmd_usuario = escapeshellarg($usuario_logado);
-                $cmd_titulo = escapeshellarg("WebPrint-" . $nome_original);
+                $cmd_titulo = escapeshellarg("WebPrint (" . $copias . " Cópias) - " . $nome_original);
                 $cmd_lados = escapeshellarg($lados);
-                $cmd_arquivo = escapeshellarg($caminho_temporario);
+                $nome_temp_safe = "/tmp/print_" . time() . ".pdf";
+
+                copy($caminho_temporario, $nome_temp_safe);
+                chmod($nome_temp_safe, 0777);
+                $cmd_arquivo = escapeshellarg($nome_temp_safe);
 
                 $comando = "lp -d {$cmd_impressora} -n {$copias} -o sides={$cmd_lados} {$orientacao} {$ajustar} {$comando_ranges} -t {$cmd_titulo} -U {$cmd_usuario} {$cmd_arquivo} 2>&1";
                 $saida_shell = shell_exec($comando);
 
-                if (strpos(strtolower($saida_shell), 'request id is') !== false || strpos(strtolower($saida_shell), 'id da requisição') !== false) {
-                    $msg = "Arquivo enviado com sucesso para a impressora <b>{$impressora_escolhida}</b>!";
-                    $tipo_msg = "success";
+                // EXTRAÇÃO INTELIGENTE DO JOB ID
+                if (preg_match('/(?:request id is|id da requisição [eé])\s+[^\s]+\-([0-9]+)/i', $saida_shell, $matches)) {
+                    $job_id_esperado = $matches[1];
+                    // Transparência: Informar que está a analisar em vez de sucesso antecipado
+                    $msg = "<b>Processando:</b> Arquivo recebido pelo servidor. Aguardando análise de segurança e cotas...";
+                    $tipo_msg = "info";
+                } elseif (strpos(strtolower($saida_shell), 'request id is') !== false || strpos(strtolower($saida_shell), 'id da requisição') !== false) {
+                    $msg = "Arquivo enviado, aguardando validação...";
+                    $tipo_msg = "info";
                 } else {
                     $msg = "Erro ao processar no servidor CUPS: <br><small>" . htmlspecialchars($saida_shell) . "</small>";
                     $tipo_msg = "danger";
@@ -375,7 +387,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 </head>
 
 <body>
-
     <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
         <div class="container">
             <a class="navbar-brand fw-bold" href="<?php echo $BASE_URL; ?>/meu-painel"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
@@ -393,7 +404,7 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
         </div>
 
         <?php if ($msg != "") { ?>
-            <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible shadow-sm">
+            <div class="alert alert-<?php echo $tipo_msg; ?> alert-dismissible shadow-sm msg-servidor">
                 <?php echo $msg; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -401,7 +412,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
 
         <div class="card shadow-sm border-0 mb-5">
             <div class="card-body p-4">
-
                 <?php if (count($impressoras_permitidas) == 0) { ?>
                     <div class="text-center py-5">
                         <i class="bi bi-x-octagon text-danger display-1 mb-3"></i>
@@ -409,7 +419,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                         <p class="text-muted">Seu usuário não possui permissão para utilizar nenhuma impressora no momento.</p>
                     </div>
                 <?php } else { ?>
-
                     <form action="<?php echo $BASE_URL; ?>/web-print" method="post" enctype="multipart/form-data" id="printForm">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="acao" value="enviar_impressao">
@@ -441,13 +450,11 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selecionarTodas(false)">Nenhuma</button>
                                 </div>
                             </div>
-
                             <div id="pdf-preview-container" class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3 mb-4"></div>
                             <hr>
-
                             <label class="form-label fw-bold text-dark"><i class="bi bi-input-cursor-text me-1"></i> Digitar Páginas Específicas</label>
                             <input type="text" class="form-control border-success form-control-lg" name="paginas_selecionadas" id="paginas_selecionadas" placeholder="Ex: 1, 3, 5-10 (Deixe em branco para imprimir tudo)">
-                            <div class="form-text text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Pode clicar nas miniaturas acima ou digitar manualmente os intervalos. Ex: 1, 3, 5-10</div>
+                            <div class="form-text text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Pode clicar nas miniaturas acima ou digitar manualmente.</div>
                         </div>
 
                         <div class="row bg-light p-3 rounded mb-3 mx-1 shadow-sm">
@@ -498,20 +505,20 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                         </div>
 
                         <div class="alert alert-warning small py-2 mt-2">
-                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Documentos enviados para as impressoras <b>Coloridas</b> serão analisados. Apenas as páginas que contém cores vão para aprovação.
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Documentos enviados para as impressoras <b>Coloridas</b> serão analisados. Apenas páginas com cor irão para aprovação.
                         </div>
 
                         <div class="card shadow-sm border-0 mb-3 d-none" id="card-tracking">
                             <div class="card-header bg-white fw-bold p-3 border-bottom text-primary">
                                 <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                                Acompanhando envio...
+                                Analisando conta e cotas... Aguarde.
                             </div>
                             <div class="card-body p-3 bg-light">
                                 <ul class="list-group list-group-flush" id="lista-tracking"></ul>
                             </div>
                         </div>
 
-                        <button type="submit" id="btn-submit" class="btn btn-primary w-100 btn-lg fw-bold mt-3 shadow-sm" onclick="this.innerHTML='<i class=\'bi bi-hourglass-split\'></i> Analisando e Enviando...';">
+                        <button type="submit" id="btn-submit" class="btn btn-primary w-100 btn-lg fw-bold mt-3 shadow-sm" onclick="this.innerHTML='<i class=\'bi bi-hourglass-split\'></i> Preparando para Envio...';">
                             <i class="bi bi-send-fill me-2"></i> Confirmar Impressão
                         </button>
                     </form>
@@ -524,20 +531,37 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
+        // O PHP devolve o Job ID exato que o Linux criou
+        const jobIdEsperado = "<?php echo $job_id_esperado; ?>";
         let selectedPages = new Set();
+
+        function limparAlertasAnteriores() {
+            // Esconde alertas iniciais do PHP para limpar a visão do usuário
+            document.querySelectorAll('.msg-servidor').forEach(el => el.style.display = 'none');
+            const cardTracking = document.getElementById('card-tracking');
+            if (cardTracking) {
+                cardTracking.classList.add('d-none');
+                const trackingHeader = cardTracking.querySelector('.card-header');
+                if (trackingHeader) {
+                    trackingHeader.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>Analisando conta e cotas... Aguarde.';
+                    trackingHeader.classList.remove('text-success', 'text-danger', 'text-warning');
+                    trackingHeader.classList.add('text-primary');
+                }
+                document.getElementById('lista-tracking').innerHTML = '';
+            }
+        }
 
         document.getElementById('arquivo_pdf').addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file || file.type !== 'application/pdf') return;
 
+            limparAlertasAnteriores();
             document.getElementById('label-upload').classList.add('d-none');
             const fileInfoBox = document.getElementById('file-info-box');
             fileInfoBox.classList.remove('d-none');
             document.getElementById('nome-arquivo-selecionado').innerText = file.name;
             document.getElementById('nome-arquivo-selecionado').title = file.name;
-
             document.getElementById('preview-section').classList.remove('d-none');
-
             const container = document.getElementById('pdf-preview-container');
             container.innerHTML = '<div class="col-12 text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2">Gerando visualização...</p></div>';
 
@@ -546,18 +570,15 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                 const pdf = await pdfjsLib.getDocument({
                     data: arrayBuffer
                 }).promise;
-
                 container.innerHTML = '';
                 selectedPages.clear();
 
                 const maxPagesToRender = Math.min(pdf.numPages, 50);
-
                 for (let i = 1; i <= maxPagesToRender; i++) {
                     const page = await pdf.getPage(i);
                     const viewport = page.getViewport({
                         scale: 0.3
                     });
-
                     const col = document.createElement('div');
                     col.className = 'col';
 
@@ -600,16 +621,15 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                 if (pdf.numPages > 50) {
                     container.innerHTML += `<div class="col-12 text-center text-muted mt-3 small"><i class="bi bi-info-circle me-1"></i> A visualização foi limitada às primeiras 50 páginas por performance.</div>`;
                 }
-
                 atualizarInputHidden();
-
             } catch (err) {
                 console.error("Erro ao ler o PDF: ", err);
-                container.innerHTML = '<div class="col-12 text-danger text-center"><i class="bi bi-x-circle"></i> Erro ao gerar a pré-visualização. Mas você ainda pode digitar as páginas na caixa abaixo.</div>';
+                container.innerHTML = '<div class="col-12 text-danger text-center"><i class="bi bi-x-circle"></i> Erro ao gerar a pré-visualização. Digite as páginas abaixo.</div>';
             }
         });
 
         function removerArquivo() {
+            limparAlertasAnteriores();
             document.getElementById('arquivo_pdf').value = '';
             document.getElementById('label-upload').classList.remove('d-none');
             document.getElementById('file-info-box').classList.add('d-none');
@@ -644,7 +664,6 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
         document.getElementById('paginas_selecionadas').addEventListener('input', function() {
             selectedPages.clear();
             const partes = this.value.split(',');
-
             partes.forEach(parte => {
                 parte = parte.trim();
                 if (parte.includes('-')) {
@@ -668,23 +687,44 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                     thumb.classList.remove('selected');
                 }
             });
-
             document.getElementById('btn-submit').disabled = (this.value.trim() !== '' && selectedPages.size === 0);
         });
 
-        const msgSuccess = document.querySelector('.alert-success');
-        if (msgSuccess) {
+        // ==============================================================
+        // TRANSPARÊNCIA: ACOMPANHAMENTO DINÂMICO E EXPLICAÇÃO DE BLOQUEIO
+        // ==============================================================
+        const msgServidor = document.querySelector('.msg-servidor');
+        // Apenas aciona a ampulheta se existir um JobID gerado (foi enviado pro Linux)
+        if (msgServidor && jobIdEsperado !== "") {
             document.getElementById('card-tracking').classList.remove('d-none');
+            let tentativas = 0;
 
             function trackLatestJob() {
+                tentativas++;
                 fetch('<?php echo $BASE_URL; ?>/public/ajax_status.php')
                     .then(response => response.json())
                     .then(data => {
                         if (data.erro || data.length === 0) return;
 
                         const latestJob = data[0];
+
+                        // Ignora históricos velhos do banco, espera o Job atual terminar
+                        if (latestJob.job_id != jobIdEsperado) {
+                            if (tentativas > 10) {
+                                clearInterval(window.trackingInterval);
+                                const trackHeader = document.querySelector('#card-tracking .card-header');
+                                trackHeader.innerHTML = '<i class="bi bi-clock-history me-2"></i>A verificação demorou muito. Verifique o resultado no seu painel depois.';
+                                trackHeader.classList.replace('text-primary', 'text-secondary');
+                            }
+                            return;
+                        }
+
+                        // Se o Job ID bater, paramos de perguntar ao banco
+                        clearInterval(window.trackingInterval);
+                        const trackHeader = document.querySelector('#card-tracking .card-header');
                         const lista = document.getElementById('lista-tracking');
 
+                        // Preenche a listagem básica com o arquivo e badge
                         lista.innerHTML = `
                         <li class="list-group-item d-flex justify-content-between align-items-center py-2 bg-transparent border-0 px-0">
                             <div class="ms-2 me-auto">
@@ -698,15 +738,36 @@ if (isset($_POST['acao']) && $_POST['acao'] == 'enviar_impressao') {
                             </div>
                         </li>`;
 
-                        if (latestJob.cod_status_impressao == 1 || latestJob.cor.includes('danger') || latestJob.cor.includes('warning')) {
-                            clearInterval(trackingInterval);
-                            document.querySelector('#card-tracking .card-header').innerHTML = '<i class="bi bi-check2-all me-2"></i>Status Finalizado';
-                            document.querySelector('#card-tracking .card-header').classList.replace('text-primary', 'text-success');
+                        
+
+                        // O PULO DO GATO: Esconde o alerta azul do topo ("Processando...") assim que temos o resultado final!
+                        const alertaTopo = document.querySelector('.msg-servidor');
+                        if (alertaTopo) alertaTopo.style.display = 'none';
+
+                        if (latestJob.cod_status_impressao == 1) {
+                            // Sucesso Absoluto
+                            trackHeader.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Impressão Aprovada!';
+                            trackHeader.classList.replace('text-primary', 'text-success');
+                        } else {} else {
+                            // Bloqueio Real! Mostramos o X vermelho e uma caixa explicativa.
+                            trackHeader.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>Atenção: Impressão Bloqueada';
+                            trackHeader.classList.replace('text-primary', 'text-danger');
+
+                            // A CAIXA DE TRANSPARÊNCIA:
+                            lista.innerHTML += `
+                            <div class="mt-3 p-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 rounded text-danger small">
+                                <i class="bi bi-info-circle-fill me-1"></i> <b>Transparência do Sistema:</b> O servidor impediu que a impressão fosse concluída porque o status do seu utilizador retornou: <b>${latestJob.status_texto}</b>.<br><br>
+                                👉 Por favor, aceda ao <b>Painel Inicial</b> para verificar se possui cota suficiente ou entre em contacto com a equipa de Suporte/NTI.
+                            </div>`;
                         }
                     });
             }
-            trackLatestJob();
-            const trackingInterval = setInterval(trackLatestJob, 2000);
+
+            // Aguarda 3 segundos para o Perl processar a cota antes de começar a perguntar
+            setTimeout(() => {
+                trackLatestJob();
+                window.trackingInterval = setInterval(trackLatestJob, 2000);
+            }, 3000);
         }
     </script>
 </body>

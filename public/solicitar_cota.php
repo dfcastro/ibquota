@@ -2,16 +2,24 @@
 
 /**
  * IBQUOTA 3 - Solicitação de Cota Extra (Usuário)
- * Com Inteligência de Contexto (Validação de Grupo e Quota Infinita)
+ * Com Inteligência de Contexto e Alertas Dinâmicos por E-mail
+ * Corrigido: Integração completa com o Roteador (URLs Amigáveis)
  */
 include_once __DIR__ . '/../../core/db.php';
 include_once __DIR__ . '/../../core/functions.php';
+
 if (session_status() === PHP_SESSION_NONE) {
     sec_session_start();
 }
 
+// ==========================================
+// DETEÇÃO INTELIGENTE DE AMBIENTE E ROTAS
+// ==========================================
+$host_atual = $_SERVER['HTTP_HOST'] ?? '';
+$BASE_URL = ($host_atual === 'localhost' || $host_atual === '127.0.0.1') ? '/gg' : '';
+
 if (!isset($_SESSION['usuario'])) {
-    header("Location: login.php");
+    header("Location: " . $BASE_URL . "/login");
     exit();
 }
 
@@ -89,11 +97,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
             } else {
                 $stmt = $mysqli->prepare("INSERT INTO solicitacoes_cota (usuario, paginas, motivo) VALUES (?, ?, ?)");
                 $stmt->bind_param('sis', $usuario_logado, $paginas, $motivo);
+
                 if ($stmt->execute()) {
+
+                    // ----------------------------------------------------
+                    // NOVO: DISPARA O ALERTA DE E-MAIL INTELIGENTE PARA O NTI
+                    // ----------------------------------------------------
+                    disparar_alerta_gestor('cota', $usuario_logado, $paginas . " páginas", $motivo);
+
                     $msg = "Solicitação enviada com sucesso! O NTI analisará seu pedido em breve.";
                     $tipo_msg = "success";
                 } else {
-                    $msg = "Erro ao enviar a solicitação.";
+                    $msg = "Erro ao enviar a solicitação no banco de dados.";
                     $tipo_msg = "danger";
                 }
                 $stmt->close();
@@ -127,10 +142,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-ifnmg shadow-sm mb-4">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="meu_painel.php"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
+            <a class="navbar-brand fw-bold" href="<?php echo $BASE_URL; ?>/meu-painel"><i class="bi bi-printer-fill me-2"></i> Impressões IFNMG</a>
             <div class="d-flex text-white align-items-center">
                 <span class="me-3"><i class="bi bi-person-circle me-1"></i> Olá, <b><?php echo htmlspecialchars($usuario_logado); ?></b></span>
-                <a href="../core/auth/logout.php" class="btn btn-sm btn-outline-light px-3">Sair</a>
+                <a href="<?php echo $BASE_URL; ?>/logout" class="btn btn-sm btn-outline-light px-3">Sair</a>
             </div>
         </div>
     </nav>
@@ -138,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
     <div class="container" style="max-width: 800px;">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h3 class="fw-bold text-dark mb-0"><i class="bi bi-plus-circle text-success me-2"></i> Solicitar Mais Páginas</h3>
-            <a href="meu_painel.php" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
+            <a href="<?php echo $BASE_URL; ?>/meu-painel" class="btn btn-outline-secondary shadow-sm"><i class="bi bi-arrow-left me-1"></i> Voltar ao Painel</a>
         </div>
 
         <?php if ($msg != "") { ?>
@@ -185,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['paginas'])) {
 
             <div class="card shadow-sm border-0 border-top border-success border-4 mb-4">
                 <div class="card-body p-4">
-                    <form action="solicitar_cota.php" method="post">
+                    <form action="<?php echo $BASE_URL; ?>/solicitar-cota" method="post">
                         <input type="hidden" name="csrf_token" value="<?php echo gerar_csrf_token(); ?>">
                         <div class="row">
                             <div class="col-md-4 mb-3">
